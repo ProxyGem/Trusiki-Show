@@ -1,1 +1,13 @@
+# Секреты и токены
+.env
+.env.local
+*.env
 
+# Python
+__pycache__/
+*.pyc
+venv/
+env/
+
+# Node.js (если бот на JS)
+node_modules/
