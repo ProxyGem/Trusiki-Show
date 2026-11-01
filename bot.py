@@ -115,6 +115,7 @@ PANEL_PING_LABELS = {
 }
 
 _shutdown_done = False
+_ready_notified = False
 
 
 # ============================================================
@@ -2410,7 +2411,8 @@ async def reset_channel_state(channel):
 # ============================================================
 @bot.event
 async def on_ready():
-    log.info(f"Бот запущен: {bot.user}")
+    global _ready_notified
+    log.info(f"Бот подключён: {bot.user}")
     for guild in bot.guilds:
         for ch in guild.voice_channels:
             if not everyone_can_connect(ch):
@@ -2420,7 +2422,10 @@ async def on_ready():
         rotate_status.start()
     if not auto_cleanup_bans.is_running():
         auto_cleanup_bans.start()
-    await notify_all_voice_channels("🟢 **Бот запущен и готов к работе!**")
+    # Не дублируем уведомление при временном переподключении.
+    if not _ready_notified:
+        _ready_notified = True
+        await notify_all_voice_channels("🟢 **Бот запущен и готов к работе!**")
 
 
 @tasks.loop(minutes=1)
@@ -2435,18 +2440,9 @@ async def before_cleanup():
 
 @bot.event
 async def on_disconnect():
-    global _shutdown_done
-    if _shutdown_done:
-        return
-    _shutdown_done = True
-    try:
-        save_settings()
-    except Exception:
-        pass
-    try:
-        await notify_all_voice_channels("🔴 **Бот выключается...**")
-    except Exception:
-        pass
+    # Событие вызывается также при временном обрыве связи.
+    # Не рассылаем ложное уведомление об остановке бота.
+    save_settings()
 
 
 @bot.event
@@ -2800,12 +2796,22 @@ def main():
     try:
         bot.run(TOKEN)
     except discord.LoginFailure:
-        log.error("❌ Неверный токен.")
+        log.error("❌ Неверный токен DISCORD_TOKEN. Проверь переменную в Render.")
     except discord.PrivilegedIntentsRequired:
         log.error(
-            "❌ Включи привилегированные интенты:\n"
-            "   PRESENCE INTENT\n   SERVER MEMBERS INTENT\n   MESSAGE CONTENT INTENT"
+            "❌ Включи привилегированные интенты в Discord Developer Portal:\\n"
+            "   SERVER MEMBERS INTENT\\n   MESSAGE CONTENT INTENT"
         )
+    except discord.HTTPException as e:
+        if getattr(e, "status", None) == 429:
+            log.error(
+                "❌ Discord/Cloudflare ограничил подключения (HTTP 429 / Error 1015). "
+                "Это не ошибка Python-кода. Не перезапускай сервис многократно: "
+                "дождись снятия ограничения и попробуй запустить один раз позже. "
+                "Если ошибка повторяется, проблема может быть в исходящем IP Render."
+            )
+        else:
+            log.exception("❌ Ошибка HTTP при подключении к Discord: %s", e)
     except KeyboardInterrupt:
         log.info("Бот остановлен.")
 
