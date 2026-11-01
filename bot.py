@@ -6,6 +6,7 @@ import time
 import math
 import random
 import logging
+import asyncio          # ← добавить
 from collections import defaultdict, deque
 
 import discord
