@@ -6,7 +6,7 @@ import time
 import math
 import random
 import logging
-import asyncio          # ← добавить
+import asyncio
 from collections import defaultdict, deque
 
 import discord
@@ -17,7 +17,6 @@ from dotenv import load_dotenv
 
 from keep_alive import keep_alive
 
-# Загружаем .env (локально). На Render переменные берутся из Environment Variables.
 load_dotenv()
 
 # ============================================================
@@ -2781,48 +2780,56 @@ async def on_command_error(ctx, error):
         log.warning(f"Ошибка команды: {error}")
 
 
+# ============================================================
+# ЗАПУСК — БЕЗОПАСНАЯ ВЕРСИЯ
+# ============================================================
 async def _run_with_retry():
     """
-    Запускаем бота, но при 429/1015 не даём контейнеру уйти в краш-луп.
-    Ждём и пробуем снова с экспоненциальной задержкой.
+    Безопасный запуск: при 429 (Cloudflare 1015) НЕ долбим Discord,
+    а ждём длинную паузу и пробуем ОДИН раз. При 401/403 — выходим.
     """
-    delays = [60, 120, 300, 600, 900]  # секунды
-    attempt = 0
-    while True:
-        try:
-            # 10 секунд паузы перед подключением — чтобы Render не долбил Discord сразу
-            await asyncio.sleep(10)
-            await bot.start(TOKEN)
-        except discord.LoginFailure:
-            log.error("❌ Неверный токен. Останавливаюсь.")
-            return
-        except discord.PrivilegedIntentsRequired:
+    try:
+        await bot.start(TOKEN)
+    except discord.LoginFailure:
+        log.error("❌ Неверный токен (401). Останавливаюсь, повторов не будет.")
+        return
+    except discord.PrivilegedIntentsRequired:
+        log.error(
+            "❌ Включи привилегированные интенты:\n"
+            "   PRESENCE INTENT\n   SERVER MEMBERS INTENT\n   MESSAGE CONTENT INTENT"
+        )
+        return
+    except discord.HTTPException as e:
+        if e.status == 429:
             log.error(
-                "❌ Включи привилегированные интенты:\n"
-                "   PRESENCE INTENT\n   SERVER MEMBERS INTENT\n   MESSAGE CONTENT INTENT"
+                "❌ 429 / Cloudflare 1015: IP временно заблокирован. "
+                "Жду 15 минут и пробую ОДИН раз. "
+                "Если снова 429 — остановлюсь, чтобы не продлевать блокировку."
             )
+            await asyncio.sleep(900)
+            try:
+                await bot.start(TOKEN)
+            except Exception as e2:
+                log.error("❌ Повторный запуск не удался: %r. Останавливаюсь.", e2)
+                return
+        elif e.status == 503:
+            log.warning("⚠️ 503 от Discord. Жду 5 минут и пробую один раз…")
+            await asyncio.sleep(300)
+            try:
+                await bot.start(TOKEN)
+            except Exception as e2:
+                log.error("❌ Повторный запуск не удался: %r. Останавливаюсь.", e2)
+                return
+        elif e.status in (401, 403):
+            log.error("❌ %s: токен недействителен или нет прав. Останавливаюсь.", e.status)
             return
-        except discord.HTTPException as e:
-            # 429 / 1015 / 503 и т.п.
-            if e.status in (429, 503):
-                wait = delays[min(attempt, len(delays) - 1)]
-                log.warning(
-                    "⚠️ Discord ответил %s (возможно Cloudflare 1015). "
-                    "Жду %s секунд перед повтором…", e.status, wait
-                )
-                attempt += 1
-                await asyncio.sleep(wait)
-                continue
-            raise
-        except Exception as e:
-            wait = delays[min(attempt, len(delays) - 1)]
-            log.warning("⚠️ Ошибка запуска: %r. Жду %s секунд…", e, wait)
-            attempt += 1
-            await asyncio.sleep(wait)
-            continue
         else:
-            # bot.start вернулся штатно (stop()/close()) — выходим
+            log.error("❌ HTTP %s: %r. Останавливаюсь.", e.status, e)
             return
+    except Exception as e:
+        log.error("❌ Ошибка запуска: %r. Останавливаюсь.", e)
+        return
+    # bot.start вернулся штатно — выходим
 
 
 def main():
@@ -2836,7 +2843,6 @@ def main():
 
     load_settings()
 
-    # keep_alive() оставляем только если реально нужен UptimeRobot
     keep_alive()
 
     try:
