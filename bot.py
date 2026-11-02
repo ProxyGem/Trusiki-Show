@@ -105,7 +105,7 @@ whitelist_mode: set[int] = set()
 banned_users: dict[int, dict[int, dict]] = defaultdict(dict)
 channel_stats: dict[int, dict] = {}
 
-# ── НОВОЕ: сохранение мьютов по каналам ──────────────────────
+# ── сохранение мьютов по каналам ────────────────────────────
 # mute_states[channel_id][user_id] = {"mute": bool, "deaf": bool, "leader_id": int}
 mute_states: dict[int, dict[int, dict]] = defaultdict(dict)
 
@@ -256,7 +256,7 @@ async def apply_limit(channel, limit):
         return False
 
 
-# ── НОВОЕ: работа с сохранёнными мьютами ────────────────────
+# ── работа с сохранёнными мьютами ───────────────────────────
 def set_mute_state(channel_id, user_id, mute=None, deaf=None, leader_id=None):
     rec = mute_states[channel_id].get(user_id)
     if rec is None:
@@ -268,7 +268,6 @@ def set_mute_state(channel_id, user_id, mute=None, deaf=None, leader_id=None):
     if leader_id is not None:
         rec["leader_id"] = leader_id
     mute_states[channel_id][user_id] = rec
-    # если оба сняты — удаляем запись, чтобы не мусорить
     if not rec["mute"] and not rec["deaf"]:
         mute_states[channel_id].pop(user_id, None)
 
@@ -283,7 +282,6 @@ async def apply_saved_mute_state(channel, member):
     if not rec:
         return
     if rec.get("leader_id") is not None and voice_leaders.get(channel.id) != rec["leader_id"]:
-        # владелец сменился — старые мьюты больше не действуют
         mute_states[channel.id].pop(member.id, None)
         return
     try:
@@ -1788,7 +1786,6 @@ class MemberButton(discord.ui.Button):
                 new_state = not target.voice.mute
                 await target.edit(mute=new_state)
                 stats_bump(channel.id, "mutes", 1)
-                # ── сохраняем состояние мьюта ──
                 set_mute_state(channel.id, target.id, mute=new_state, leader_id=leader_id)
                 msg = f"{'🔇' if new_state else '🔊'} {target.display_name}: микро {'выкл' if new_state else 'вкл'}."
                 await notify_dm(target, content=(
@@ -1798,7 +1795,6 @@ class MemberButton(discord.ui.Button):
                 new_state = not target.voice.deaf
                 await target.edit(deafen=new_state)
                 stats_bump(channel.id, "deafs", 1)
-                # ── сохраняем состояние дефа ──
                 set_mute_state(channel.id, target.id, deaf=new_state, leader_id=leader_id)
                 msg = f"{'🎧' if new_state else '🔊'} {target.display_name}: уши {'выкл' if new_state else 'вкл'}."
                 await notify_dm(target, content=(
@@ -1812,7 +1808,6 @@ class MemberButton(discord.ui.Button):
                 voice_leaders[self.channel_id] = target.id
                 reset_stats(self.channel_id, target.id)
                 stats_track_join(self.channel_id, target.id)
-                # при смене лидера старые мьюты сбрасываются
                 mute_states.pop(self.channel_id, None)
                 await notify_dm(target, content=(
                     f"👑 **{leader_name}** передал вам владение **{channel.name}**."))
@@ -2006,19 +2001,21 @@ class BanMemberSelectView(discord.ui.View):
 
     def _make_cb(self, user_id):
         async def cb(interaction):
-            await interaction.response.defer(ephemeral=True)
+            # ❗ НЕ вызываем defer — иначе send_modal не сработает
             if voice_leaders.get(self.channel_id) != interaction.user.id:
-                await interaction.followup.send("🚫 Только лидер.", ephemeral=True)
+                await interaction.response.send_message(
+                    "🚫 Только лидер.", ephemeral=True)
                 return
             channel = bot.get_channel(self.channel_id)
             if not channel:
-                await interaction.followup.send("Канал не найден.", ephemeral=True)
+                await interaction.response.send_message(
+                    "Канал не найден.", ephemeral=True)
                 return
             if self.ban_kind == "perm":
-                await interaction.followup.send_modal(
+                await interaction.response.send_modal(
                     PermBanModal(channel.id, user_id, interaction.user.id))
             else:
-                await interaction.followup.send_modal(
+                await interaction.response.send_modal(
                     TempBanReasonModal(channel.id, user_id, interaction.user.id,
                                        seconds=3600, label="1 час"))
         return cb
@@ -2310,7 +2307,7 @@ async def do_clear_channel(channel, interaction):
     whitelist_mode.discard(cid)
     trusted_users.pop(cid, None)
     banned_users.pop(cid, None)
-    mute_states.pop(cid, None)  # очищаем сохранённые мьюты
+    mute_states.pop(cid, None)
     leader_id = voice_leaders.get(cid)
     if leader_id:
         reset_stats(cid, leader_id)
@@ -2459,7 +2456,7 @@ async def reset_channel_state(channel):
     whitelist_mode.discard(cid)
     trusted_users.pop(cid, None)
     banned_users.pop(cid, None)
-    mute_states.pop(cid, None)  # сбрасываем сохранённые мьюты
+    mute_states.pop(cid, None)
     clean_channel(cid)
     channel_stats.pop(cid, None)
     await refresh_lock_message(channel)
@@ -2592,7 +2589,6 @@ async def handle_join(channel, member):
     if member.id in q:
         member_channel[member.id] = cid
         stats_track_join(cid, member.id)
-        # ── НОВОЕ: применяем сохранённый мьют при возврате ──
         await apply_saved_mute_state(channel, member)
         return
 
@@ -2603,7 +2599,6 @@ async def handle_join(channel, member):
         ensure_stats(cid, q[0])
     await refresh_lock_message(channel)
     stats_track_join(cid, member.id)
-    # ── НОВОЕ: применяем сохранённый мьют при входе ──
     await apply_saved_mute_state(channel, member)
 
 
@@ -2630,7 +2625,6 @@ async def handle_leave(channel, member, before_members=None):
     if was_leader:
         new_leader = random.choice(remaining)
         voice_leaders[cid] = new_leader.id
-        # при смене лидера старые мьюты сбрасываются
         mute_states.pop(cid, None)
         q = voice_queues.get(cid)
         if q is not None:
@@ -2693,7 +2687,7 @@ async def setleader_cmd(ctx, member: discord.Member, channel: discord.VoiceChann
         q.remove(member.id)
     q.appendleft(member.id)
     voice_leaders[cid] = member.id
-    mute_states.pop(cid, None)  # при смене лидера сбрасываем мьюты
+    mute_states.pop(cid, None)
     reset_stats(cid, member.id)
     stats_track_join(cid, member.id)
     if member.voice and member.voice.channel != channel:
@@ -2897,7 +2891,6 @@ async def _run_with_retry():
     except Exception as e:
         log.error("❌ Ошибка запуска: %r. Останавливаюсь.", e)
         return
-    # bot.start вернулся штатно — выходим
 
 
 def main():
