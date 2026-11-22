@@ -1,912 +1,3145 @@
-import discord
-from discord.ext import commands
-import asyncio
+# bot.py — единый файл
 import os
+import io
+import json
+import time
+import math
+import random
+import logging
+import asyncio
+from collections import defaultdict, deque
 
-# ===== ПУТЬ К FFMPEG =====
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FFMPEG_PATH = os.path.join(BASE_DIR, 'ffmpeg.exe')
-# =================================================
+import discord
+from discord.ext import commands, tasks
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
-# ===== КОНФИГУРАЦИЯ =====
-# Укажи токен в переменной окружения DISCORD_TOKEN.
-# Не вставляй токен прямо в файл.
-TOKEN = os.getenv('DISCORD_TOKEN')
-GUILD_ID = 1397635666480861397
+from dotenv import load_dotenv
 
-HUB_IMAGE = 'hub.png'
-PLAY_IMAGE = 'play.png'
-UPDATELOGS_IMAGE = 'updatelogs.png'
-GUIDE_URL = 'https://discord.com/channels/1397635666480861397/1428791257404018778/1548422657354235975'
-TRUSIKI_MUSIC_URL = 'https://slava20222014-create.github.io/TrusikiMusic/'
-DEV_MENTION = '<@1104097922909491351>'
+from keep_alive import keep_alive
 
-TRACKS = {
-    'лашара': 'https://videotourl.com/audio/1781775269496-0257b485-9f54-4b2f-8af8-b068911745e4.mp3',
-    'вертитоп-лашара': 'https://www.image2url.com/r2/default/audio/1789244815745-7df6bc97-605b-4467-bc02-3f57d8cbad27.mp3',
-    'хватит-меня-булить': 'https://videotourl.com/audio/1781792491279-c47792dc-3414-41d8-9779-73dcafcbe31f.mp3',
-    'вертитоп-лошадь': 'https://videotourl.com/audio/1781794423800-8b1ffcb7-e533-46e9-a27c-3e9e3fde397a.mp3',
-    '1-час-и-1-минуту': 'https://www.image2url.com/r2/default/audio/1786818163101-4fa2be73-2062-4769-a28e-5fa36a435c49.mp3',
-    'в-канаве': 'https://www.image2url.com/r2/default/audio/1786818218357-346e6cc2-5961-4dbf-823d-1f7fb1ad226e.mp3',
-    'пузико': 'https://www.image2url.com/r2/default/audio/1787222722631-6d97cf0c-6c01-4495-bed6-f1e088fe0870.mp3',
-    'династия-гемера': 'https://www.image2url.com/r2/default/audio/1787223125225-0fa5b611-d85b-40c3-a23f-75e25c0f2939.mp3',
-    'мазафако': 'https://www.image2url.com/r2/default/audio/1789241629051-6548266c-7672-4e9e-8bcd-1daabb9377e4.mp3',
-    'олд-ттд': 'https://www.image2url.com/r2/default/audio/1789293369913-7265a85c-1572-42c2-85cf-df672a462311.mp3',
-    'биг-дилда-опять-за-своё': 'https://www.image2url.com/r2/default/audio/1789293508254-462c77a7-1813-483f-b34b-de6f0f3be202.mp3',
-    'если-верти-всё-мало': 'https://www.image2url.com/r2/default/audio/1789293540774-54036623-4588-45c2-a8b8-488dac3834db.mp3',
-    'верти-мифа-и-ночной-шалун': 'https://www.image2url.com/r2/default/audio/1789293658484-bbb2190e-c381-4a92-871e-42d21b605d7b.mp3',
-    'фублин-жирный-говноед': 'https://www.image2url.com/r2/default/audio/1789293707974-f49863b8-7526-448d-ae5b-7bb885acec21.mp3',
-    'фубля-лох': 'https://videotourl.com/audio/1789293788569-416bb607-58e9-4145-8f58-bcdb5c838492.mp3',
-    'способка-не-работает': 'https://videotourl.com/audio/1791309285608-f05300b9-dc3d-444f-8551-56e7b1dc1386.mp3',
-    'blood-in-your-eyes': 'https://videotourl.com/audio/1795359135541-dabcec9b-45b0-46c2-a6f5-4b282d2ad0e6.mp3',
-    'love-is-a-long-road': 'https://videotourl.com/audio/1795360025185-f3995f56-6346-43f9-a22f-0344daa76219.mp3',
-    'hot-together': 'https://videotourl.com/audio/1795361374732-29d4ab01-0ef2-4df9-a43e-7d485b71f0ea.mp3',
-    'rhyno': 'https://videotourl.com/audio/1795361441506-15a1f8ed-7e71-4d2d-9de7-d5f9f87c55ed.mp3',
-}
+load_dotenv()
+# ============================================================
+# НАСТРОЙКИ — БЕРУТСЯ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ
+# ============================================================
+TOKEN = os.environ.get("DISCORD_TOKEN")
+OWNER_ID = os.environ.get("OWNER_ID", "")
+PANEL_IMAGE_URL = os.environ.get(
+    "PANEL_IMAGE_URL",
+    "https://raw.githubusercontent.com/ProxyGem/Trusiki-Show/main/panel_upravleniya_gta6.png",
+)
+SETTINGS_FILE = "settings.json"
 
-TRACK_LABELS = {
-    'лашара': 'Лашара',
-    'вертитоп-лашара': 'Вертитоп — лашара',
-    'хватит-меня-булить': 'Хватит меня булить',
-    'вертитоп-лошадь': 'Вертитоп лошадь',
-    '1-час-и-1-минуту': '1 час и 1 минуту',
-    'в-канаве': 'В канаве',
-    'мазафако': 'Мазафако Funk',
-    'олд-ттд': 'Олд ТТД',
-    'биг-дилда-опять-за-своё': 'Биг дилда опять за своё',
-    'если-верти-всё-мало': 'Если верти всё мало',
-    'верти-мифа-и-ночной-шалун': 'Верти, Мифа и ночной шалун',
-    'фублин-жирный-говноед': 'Фублин жирный говноед',
-    'фубля-лох': 'Фубля лох',
-    'способка-не-работает': 'Способка не работает',
-    'blood-in-your-eyes': 'Blood In Your Eyes',
-    'love-is-a-long-road': 'Love Is A Long Road',
-    'hot-together': 'Hot Together',
-    'rhyno': 'RHYNO',
-}
+OWNER_IDS: set[int] = set()
+for part in OWNER_ID.split(","):
+    part = part.strip()
+    if part.isdigit():
+        OWNER_IDS.add(int(part))
 
-DEFAULT_AUDIO_URL = TRACKS['лашара']
-
-# === ПЛЕЙЛИСТ GTA 6 ===
-EVENT_CHAIN = [
-    ('blood-in-your-eyes', 'Blood In Your Eyes'),
-    ('love-is-a-long-road', 'Love Is A Long Road'),
-    ('hot-together', 'Hot Together'),
-    ('rhyno', 'RHYNO'),
-]
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] %(levelname)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+log = logging.getLogger("mazafaka")
 
 intents = discord.Intents.default()
-intents.message_content = True
 intents.voice_states = True
+intents.members = True
 intents.guilds = True
+intents.message_content = True
 
-bot = commands.Bot(command_prefix='!', intents=intents)
-bot.currently_playing = False
-bot.loop_running = False
-bot.current_track = None
-bot.current_url = None
-bot.voice_client = None
-bot.volume = 50
-bot.current_generation = 0
-bot.is_connecting = False
-bot.event_chain_active = False
-bot.event_chain_index = 0
+bot = commands.Bot(command_prefix="!", intents=intents)
+
 
 # ============================================================
-# ================   ХЕЛПЕРЫ DEFER / SAFE SEND   =============
+# СТАТУСЫ
 # ============================================================
+STATUS_PHRASES = [
+    "хелоу мазафако", "тупо мазасрака", "я тут просто чиллю",
+    "не пиши мне больше, иза тебя я потерял всех своих друзей",
+    "вертитоп лашара", "мазафако", "войсы под контролем",
+    "кого кикнуть сегодня?", "кого замутить сегодня?", "мазафака на связи",
+]
+STATUS_TYPES = [
+    discord.ActivityType.listening,
+    discord.ActivityType.watching,
+    discord.ActivityType.playing,
+]
+STATUS_INTERVAL_MINUTES = 5
 
-async def safe_defer(interaction: discord.Interaction, ephemeral: bool = True) -> bool:
+
+@tasks.loop(minutes=STATUS_INTERVAL_MINUTES)
+async def rotate_status():
+    phrase = random.choice(STATUS_PHRASES)
+    act_type = random.choice(STATUS_TYPES)
     try:
-        if not interaction.response.is_done():
-            await interaction.response.defer(ephemeral=ephemeral)
-        return True
-    except discord.errors.NotFound:
-        return False
-    except discord.errors.InteractionResponded:
-        return True
-    except Exception as e:
-        print(f'❌ defer error: {e}')
-        return False
-
-async def safe_followup(interaction: discord.Interaction, content=None, embed=None, view=None, file=None, ephemeral: bool = True):
-    try:
-        kwargs = {'ephemeral': ephemeral}
-        if content is not None: kwargs['content'] = content
-        if embed is not None: kwargs['embed'] = embed
-        if view is not None: kwargs['view'] = view
-        if file is not None: kwargs['file'] = file
-        await interaction.followup.send(**kwargs)
-    except Exception as e:
-        print(f'❌ followup error: {e}')
-
-def get_author_voice_channel(ctx_or_interaction):
-    if isinstance(ctx_or_interaction, discord.Interaction):
-        member = ctx_or_interaction.user
-    else:
-        member = ctx_or_interaction.author
-    if member is None:
-        return None
-    if hasattr(member, 'voice') and member.voice and member.voice.channel:
-        return member.voice.channel
-    return None
-
-def get_bot_voice_channel(guild):
-    """Возвращает голосовой канал бота только на указанном сервере."""
-    if guild is None:
-        return None
-
-    for vc in bot.voice_clients:
-        if vc.guild and vc.guild.id == guild.id and vc.is_connected():
-            return vc.channel
-
-    return None
-
-
-def same_voice_channel(channel_a, channel_b):
-    """Сравнивает каналы по Discord ID, а не по объектам Python."""
-    return (
-        channel_a is not None
-        and channel_b is not None
-        and channel_a.id == channel_b.id
-    )
-
-async def ensure_bot_free_or_same(ctx, voice_channel):
-    bot_channel = get_bot_voice_channel(voice_channel.guild)
-    if bot_channel and not same_voice_channel(bot_channel, voice_channel):
-        await ctx.send(
-            f'❌ __**Бот уже занят в другом голосовом канале:**__ **{bot_channel.name}**\n'
-            f'__**Сначала освободите его командой**__ `!leave`'
+        await bot.change_presence(
+            status=discord.Status.online,
+            activity=discord.Activity(type=act_type, name=phrase),
         )
+    except Exception as e:
+        log.warning(f"Не удалось сменить статус: {e}")
+
+
+@rotate_status.before_loop
+async def before_rotate_status():
+    await bot.wait_until_ready()
+
+
+# ============================================================
+# ХРАНИЛИЩЕ
+# ============================================================
+voice_queues: dict[int, deque[int]] = defaultdict(deque)
+voice_leaders: dict[int, int] = {}
+member_channel: dict[int, int] = {}
+lock_messages: dict[int, discord.Message] = {}
+locked_channels: set[int] = set()
+initially_locked: set[int] = set()
+original_limits: dict[int, int] = {}
+custom_limits: dict[int, int] = {}
+dm_notifications: dict[int, bool] = defaultdict(lambda: True)
+
+trusted_users: dict[int, set[int]] = defaultdict(set)
+whitelist_mode: set[int] = set()
+
+banned_users: dict[int, dict[int, dict]] = defaultdict(dict)
+channel_stats: dict[int, dict] = {}
+
+# ── сохранение мьютов по каналам ────────────────────────────
+# mute_states[channel_id][user_id] = {"mute": bool, "deaf": bool, "leader_id": int}
+mute_states: dict[int, dict[int, dict]] = defaultdict(dict)
+
+panel_ping_mode: dict[int, str] = defaultdict(lambda: "ping")
+PANEL_PING_CYCLE = ["none", "text_ping", "ping"]
+PANEL_PING_LABELS = {
+    "none": "Без пинга",
+    "text_ping": "Текст + пинг",
+    "ping": "Только пинг",
+}
+
+_shutdown_done = False
+
+
+# ============================================================
+# ПЕРСОНАЛЬНЫЕ НАСТРОЙКИ
+# ============================================================
+def load_settings():
+    if not os.path.exists(SETTINGS_FILE):
+        return
+    try:
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        log.warning(f"Не могу прочитать {SETTINGS_FILE}: {e}")
+        return
+    for uid_str, enabled in data.get("dm_notifications", {}).items():
+        if str(uid_str).isdigit():
+            dm_notifications[int(uid_str)] = bool(enabled)
+    for uid_str, mode in data.get("panel_ping_mode", {}).items():
+        if str(uid_str).isdigit() and mode in PANEL_PING_CYCLE:
+            panel_ping_mode[int(uid_str)] = mode
+
+
+def save_settings():
+    data = {
+        "dm_notifications": {str(k): bool(v) for k, v in dm_notifications.items()},
+        "panel_ping_mode": {str(k): v for k, v in panel_ping_mode.items()},
+    }
+    try:
+        tmp = SETTINGS_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, SETTINGS_FILE)
+    except OSError as e:
+        log.warning(f"Не могу сохранить {SETTINGS_FILE}: {e}")
+
+
+# ============================================================
+# ПРОВЕРКА ВЛАДЕЛЬЦА
+# ============================================================
+def is_bot_owner(user):
+    return user.id in OWNER_IDS
+
+
+def owner_only():
+    async def predicate(ctx):
+        if not is_bot_owner(ctx.author):
+            await ctx.reply("🚫 Только владелец бота.", mention_author=False)
+            return False
+        return True
+    return commands.check(predicate)
+
+
+# ============================================================
+# УТИЛИТЫ
+# ============================================================
+def is_human(member):
+    return member is not None and not member.bot
+
+
+def dm_enabled(user_id):
+    return dm_notifications.get(user_id, True)
+
+
+def get_panel_ping_mode(user_id):
+    mode = panel_ping_mode.get(user_id, "ping")
+    if mode not in PANEL_PING_CYCLE:
+        mode = "ping"
+    return mode
+
+
+def set_panel_ping_mode(user_id, mode):
+    panel_ping_mode[user_id] = mode
+
+
+def build_panel_content(user_id):
+    mode = get_panel_ping_mode(user_id)
+    if mode == "none":
+        return "Панель управления"
+    if mode == "text_ping":
+        return f"Панель управления <@{user_id}>"
+    return f"<@{user_id}>"
+
+
+def clean_channel(channel_id):
+    voice_queues.pop(channel_id, None)
+    voice_leaders.pop(channel_id, None)
+    mute_states.pop(channel_id, None)
+    for mid in [m for m, c in member_channel.items() if c == channel_id]:
+        member_channel.pop(mid, None)
+
+
+def remove_member_from_queue(channel_id, member_id):
+    q = voice_queues.get(channel_id)
+    if q is None:
+        return
+    try:
+        q.remove(member_id)
+    except ValueError:
+        return
+
+
+def voice_flags(member):
+    if not member.voice:
+        return ""
+    flags = []
+    if member.voice.mute:
+        flags.append("🔇")
+    if member.voice.deaf:
+        flags.append("🎧")
+    return (" " + "".join(flags)) if flags else ""
+
+
+def everyone_can_connect(channel):
+    ow = channel.overwrites_for(channel.guild.default_role)
+    if ow.connect is None:
+        return channel.guild.default_role.permissions.connect
+    return bool(ow.connect)
+
+
+def is_locked(channel):
+    return channel.id in locked_channels
+
+
+def get_limit(channel):
+    if channel.id in custom_limits:
+        return custom_limits[channel.id]
+    return channel.user_limit or 0
+
+
+async def apply_limit(channel, limit):
+    try:
+        await channel.edit(user_limit=limit, reason="Мазафака: лимит")
+        custom_limits[channel.id] = limit
+        return True
+    except discord.Forbidden:
         return False
+
+
+# ── работа с сохранёнными мьютами ───────────────────────────
+def set_mute_state(channel_id, user_id, mute=None, deaf=None, leader_id=None):
+    rec = mute_states[channel_id].get(user_id)
+    if rec is None:
+        rec = {"mute": False, "deaf": False, "leader_id": leader_id}
+    if mute is not None:
+        rec["mute"] = bool(mute)
+    if deaf is not None:
+        rec["deaf"] = bool(deaf)
+    if leader_id is not None:
+        rec["leader_id"] = leader_id
+    mute_states[channel_id][user_id] = rec
+    if not rec["mute"] and not rec["deaf"]:
+        mute_states[channel_id].pop(user_id, None)
+
+
+def get_mute_state(channel_id, user_id):
+    return mute_states.get(channel_id, {}).get(user_id)
+
+
+async def apply_saved_mute_state(channel, member):
+    """Применяет сохранённый мьют/деф при входе пользователя в канал."""
+    rec = get_mute_state(channel.id, member.id)
+    if not rec:
+        return
+    if rec.get("leader_id") is not None and voice_leaders.get(channel.id) != rec["leader_id"]:
+        mute_states[channel.id].pop(member.id, None)
+        return
+    try:
+        if rec.get("mute") and not member.voice.mute:
+            await member.edit(mute=True, reason="Мазафака: сохранённый мьют")
+        if rec.get("deaf") and not member.voice.deaf:
+            await member.edit(deafen=True, reason="Мазафака: сохранённый мьют")
+    except (discord.Forbidden, discord.HTTPException):
+        pass
+
+
+# ============================================================
+# WHITELIST
+# ============================================================
+def is_trusted(channel_id, user_id):
+    return user_id in trusted_users.get(channel_id, set())
+
+
+def whitelist_enabled(channel_id):
+    return channel_id in whitelist_mode
+
+
+# ============================================================
+# БАНЫ
+# ============================================================
+def is_banned(channel_id, member_id):
+    entries = banned_users.get(channel_id, {})
+    rec = entries.get(member_id)
+    if not rec:
+        return False
+    if rec.get("type") == "temp" and rec.get("expires_at"):
+        if rec["expires_at"] <= time.time():
+            entries.pop(member_id, None)
+            return False
     return True
 
-# ============================================================
-# ================       PLAY-VIEW (кнопки)      =============
-# ============================================================
 
-class PlayTrackButton(discord.ui.Button):
-    def __init__(self, track_key: str, label: str, row: int):
-        super().__init__(
-            label=label,
-            style=discord.ButtonStyle.success,
-            emoji='▶️',
-            custom_id=f'play_track_{track_key}',
-            row=row
-        )
-        self.track_key = track_key
+def add_ban(channel_id, guild_id, user_id, ban_type, reason, issued_by, duration_sec=None):
+    now = time.time()
+    rec = {
+        "user_id": user_id,
+        "guild_id": guild_id,
+        "channel_id": channel_id,
+        "type": ban_type,
+        "reason": reason or "—",
+        "issued_by": issued_by,
+        "issued_at": now,
+        "expires_at": (now + duration_sec) if (ban_type == "temp" and duration_sec) else None,
+    }
+    banned_users[channel_id][user_id] = rec
+    stats_bump(channel_id, "bans", 1)
+    return rec
 
-    async def callback(self, interaction: discord.Interaction):
-        ok = await safe_defer(interaction, ephemeral=True)
-        if not ok:
-            return
 
-        url = TRACKS.get(self.track_key)
-        label = TRACK_LABELS.get(self.track_key, self.track_key)
-        if not url:
-            await safe_followup(interaction, content='❌ __**Трек не найден!**__')
-            return
+def remove_ban(channel_id, user_id):
+    entries = banned_users.get(channel_id)
+    if not entries or user_id not in entries:
+        return False
+    entries.pop(user_id, None)
+    stats_bump(channel_id, "unbans", 1)
+    return True
 
-        voice_channel = get_author_voice_channel(interaction)
-        if not voice_channel:
-            await safe_followup(interaction, content='❌ __**Ты не в голосовом канале! Зайди в войс и попробуй снова.**__')
-            return
 
-        bot_channel = get_bot_voice_channel(interaction.guild)
-        if bot_channel and not same_voice_channel(bot_channel, voice_channel):
-            await safe_followup(interaction, content=f'❌ __**Бот уже занят в другом канале:**__ **{bot_channel.name}**')
-            return
+def cleanup_expired_bans():
+    now = time.time()
+    for cid, entries in banned_users.items():
+        for uid, rec in list(entries.items()):
+            if rec.get("type") == "temp" and rec.get("expires_at") and rec["expires_at"] <= now:
+                entries.pop(uid, None)
 
-        if self.track_key in [k for k, _ in EVENT_CHAIN]:
-            bot.event_chain_active = True
-            bot.event_chain_index = [k for k, _ in EVENT_CHAIN].index(self.track_key)
-        else:
-            bot.event_chain_active = False
-
-        await safe_followup(interaction, content=f'🎵 __**Включаю:**__ **{label}** в **{voice_channel.name}**')
-        asyncio.create_task(connect_and_play_url(voice_channel, url, label, ctx=None))
-
-class PlayView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        # Исключаем из меню "Включить музыку" треки цепочки GTA 6
-        excluded = {'blood-in-your-eyes', 'love-is-a-long-road'}
-        filtered = {k: v for k, v in TRACK_LABELS.items() if k not in excluded}
-        print(f'🔧 PlayView создан, треков: {len(filtered)}')
-        row = 0
-        col = 0
-        for key, label in filtered.items():
-            if col >= 5:
-                row += 1
-                col = 0
-            if row >= 5:
-                print(f'⚠️ Достигнут лимит рядов, трек пропущен: {key}')
-                break
-            self.add_item(PlayTrackButton(key, label, row))
-            col += 1
-        print(f'🔧 Кнопок добавлено: {len(self.children)}')
-
-def build_play_embed(guild: discord.Guild | None) -> discord.Embed:
-    embed = discord.Embed(
-        title='<:__:1408871102200938709> __**ВКЛЮЧИТЬ МУЗЫКУ**__ <:__:1408871102200938709>',
-        description='__**Нажми на кнопку с названием песни, чтобы включить её!**__ 🎶\n__**(бот зайдёт в твой войс)**__',
-        color=discord.Color.green()
-    )
-    embed.set_footer(text='⚡ Кнопки работают всегда ⚡')
-    if guild and guild.icon:
-        embed.set_author(name='🎧 Музыкальный Трусикинский бот', icon_url=guild.icon.url)
-    return embed
 
 # ============================================================
-# ================       UPDATE LOGS VIEW        =============
+# СТАТИСТИКА
 # ============================================================
+def new_stats_record(leader_id):
+    return {
+        "leader_id": leader_id,
+        "started_at": time.time(),
+        "unique_visitors": [],
+        "joins": 0,
+        "kicks": 0,
+        "mutes": 0,
+        "deafs": 0,
+        "bans": 0,
+        "unbans": 0,
+        "requests": 0,
+        "approved": 0,
+        "denied": 0,
+        "sessions": [],
+        "active_sessions": {},
+    }
 
-class UpdateLogButton(discord.ui.Button):
-    def __init__(self, version: str, active: bool = False, row: int = 0):
-        super().__init__(
-            label=version,
-            style=discord.ButtonStyle.primary if active else discord.ButtonStyle.secondary,
-            custom_id=f'update_log_{version}',
-            row=row
-        )
-        self.version = version
 
-    async def callback(self, interaction: discord.Interaction):
-        try:
-            view = self.view
-            if isinstance(view, UpdateLogsView):
-                view.set_active(self.version)
-            embed = build_update_log_embed(self.version, interaction.guild)
+def ensure_stats(channel_id, leader_id):
+    st = channel_stats.get(channel_id)
+    if not st or st.get("leader_id") != leader_id:
+        channel_stats[channel_id] = new_stats_record(leader_id)
+    return channel_stats[channel_id]
+
+
+def reset_stats(channel_id, new_leader_id):
+    if new_leader_id is None:
+        channel_stats.pop(channel_id, None)
+    else:
+        channel_stats[channel_id] = new_stats_record(new_leader_id)
+
+
+def stats_track_join(channel_id, user_id):
+    st = channel_stats.get(channel_id)
+    if not st:
+        return
+    st["joins"] = st.get("joins", 0) + 1
+    if user_id not in st["unique_visitors"]:
+        st["unique_visitors"].append(user_id)
+    st["active_sessions"][str(user_id)] = time.time()
+
+
+def stats_track_leave(channel_id, user_id):
+    st = channel_stats.get(channel_id)
+    if not st:
+        return
+    start = st["active_sessions"].pop(str(user_id), None)
+    if start:
+        st["sessions"].append({
+            "user_id": user_id, "start": start, "end": time.time(),
+        })
+
+
+def stats_bump(channel_id, key, delta=1):
+    st = channel_stats.get(channel_id)
+    if not st:
+        return
+    st[key] = st.get(key, 0) + delta
+
+
+# ============================================================
+# УВЕДОМЛЕНИЯ
+# ============================================================
+async def notify_dm(member, content=None, embed=None):
+    if not dm_enabled(member.id):
+        return
+    kwargs = {}
+    if content is not None:
+        kwargs["content"] = content
+    if embed is not None:
+        kwargs["embed"] = embed
+    if not kwargs:
+        return
+    try:
+        await member.send(**kwargs)
+    except (discord.Forbidden, discord.HTTPException):
+        pass
+
+
+def _channel_humans(channel):
+    result = []
+    for member in channel.guild.members:
+        if member.bot:
+            continue
+        vs = member.voice
+        if vs and vs.channel and vs.channel.id == channel.id:
+            result.append(member)
+    return result
+
+
+async def notify_all_voice_channels(text):
+    for guild in bot.guilds:
+        for channel in guild.voice_channels:
+            if not _channel_humans(channel):
+                continue
             try:
-                if interaction.message and interaction.message.attachments:
-                    embed.set_image(url='attachment://updatelogs.png')
+                await channel.send(text)
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+
+
+# ============================================================
+# БЕЗОПАСНЫЕ ОТВЕТЫ
+# ============================================================
+async def safe_respond(interaction, content=None, embed=None, view=None, ephemeral=True):
+    kwargs = {"ephemeral": ephemeral}
+    if content is not None:
+        kwargs["content"] = content
+    if embed is not None:
+        kwargs["embed"] = embed
+    if view is not None:
+        kwargs["view"] = view
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(**kwargs)
+        else:
+            await interaction.response.send_message(**kwargs)
+    except discord.InteractionResponded:
+        try:
+            await interaction.followup.send(**kwargs)
+        except discord.HTTPException:
+            pass
+    except discord.HTTPException:
+        pass
+
+
+async def safe_edit_original(interaction, embed=None, view=None, content=None):
+    kwargs = {}
+    if content is not None:
+        kwargs["content"] = content
+    if embed is not None:
+        kwargs["embed"] = embed
+    if view is not None:
+        kwargs["view"] = view
+    if not kwargs:
+        return
+    try:
+        await interaction.edit_original_response(**kwargs)
+    except (discord.NotFound, discord.HTTPException):
+        pass
+
+
+async def safe_reply(ctx, content=None, embed=None, view=None, delete_after=None, files=None):
+    kwargs = {"mention_author": False}
+    if content is not None:
+        kwargs["content"] = content
+    if embed is not None:
+        kwargs["embed"] = embed
+    if view is not None:
+        kwargs["view"] = view
+    if delete_after is not None:
+        kwargs["delete_after"] = delete_after
+    if files is not None:
+        kwargs["files"] = files
+    try:
+        return await ctx.reply(**kwargs)
+    except discord.HTTPException:
+        try:
+            return await ctx.send(**kwargs)
+        except discord.HTTPException:
+            return None
+
+
+# ============================================================
+# РЕНДЕР СТАТИСТИКИ — GLASSMORPHISM (без эмодзи)
+# ============================================================
+W_STATS, H_STATS = 1400, 900
+
+C_BG1 = (10, 8, 6)
+C_BG2 = (22, 16, 10)
+C_GLASS = (255, 240, 210, 16)
+C_GLASS_B = (255, 200, 120, 70)
+C_ACCENT = (255, 165, 0)
+C_ACCENT2 = (255, 210, 60)
+C_ACCENT3 = (255, 120, 0)
+C_TEXT = (250, 245, 235)
+C_DIM = (170, 160, 145)
+C_DANGER = (255, 90, 70)
+C_GOOD = (140, 210, 100)
+C_INFO = (120, 180, 255)
+
+
+def _font(size, bold=False):
+    candidates = []
+    if bold:
+        candidates += [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+            "/Library/Fonts/Arial Bold.ttf",
+            "assets/DejaVuSans-Bold.ttf",
+            "C:/Windows/Fonts/segoeuib.ttf",
+            "C:/Windows/Fonts/arialbd.ttf",
+            "C:/Windows/Fonts/segoeui.ttf",
+            "C:/Windows/Fonts/arial.ttf",
+            "C:/Windows/Fonts/calibrib.ttf",
+        ]
+    else:
+        candidates += [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            "/Library/Fonts/Arial.ttf",
+            "assets/DejaVuSans.ttf",
+            "C:/Windows/Fonts/segoeui.ttf",
+            "C:/Windows/Fonts/arial.ttf",
+            "C:/Windows/Fonts/calibri.ttf",
+        ]
+    for p in candidates:
+        try:
+            return ImageFont.truetype(p, size)
+        except (OSError, IOError):
+            continue
+    log.warning("Не найден TTF-шрифт, использую load_default() — кириллица может быть квадратами")
+    return ImageFont.load_default()
+
+
+def _fsize(font, default=12):
+    try:
+        return font.size
+    except AttributeError:
+        return default
+
+
+def _text_w(d, text, font):
+    try:
+        return d.textlength(text, font=font)
+    except Exception:
+        try:
+            return d.textsize(text, font=font)[0]
+        except Exception:
+            return len(str(text)) * _fsize(font) // 2
+
+
+def _fmt_dur(seconds):
+    seconds = int(seconds)
+    h, r = divmod(seconds, 3600)
+    m, s = divmod(r, 60)
+    if h:
+        return f"{h}ч {m}м"
+    if m:
+        return f"{m}м {s}с"
+    return f"{s}с"
+
+
+def _h_gradient(w, h, c1, c2):
+    w = max(1, int(w))
+    h = max(1, int(h))
+    img = Image.new("RGB", (w, h), c1)
+    gd = ImageDraw.Draw(img)
+    for x in range(w):
+        t = x / max(1, w - 1)
+        r = int(c1[0] * (1 - t) + c2[0] * t)
+        g = int(c1[1] * (1 - t) + c2[1] * t)
+        b = int(c1[2] * (1 - t) + c2[2] * t)
+        gd.line([(x, 0), (x, h)], fill=(r, g, b))
+    return img.convert("RGBA")
+
+
+def _gradient_bg(w, h):
+    top = (14, 10, 6)
+    bot = (26, 18, 10)
+    img = Image.new("RGB", (w, h), top)
+    d = ImageDraw.Draw(img)
+    for y in range(h):
+        t = y / max(1, h - 1)
+        r = int(top[0] * (1 - t) + bot[0] * t)
+        g = int(top[1] * (1 - t) + bot[1] * t)
+        b = int(top[2] * (1 - t) + bot[2] * t)
+        d.line([(0, y), (w, y)], fill=(r, g, b))
+    return img.convert("RGBA")
+
+
+def _radial_glow(size, center, radius, color, max_alpha=100):
+    w, h = size
+    layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    cx, cy = center
+    steps = 24
+    for i in range(steps, 0, -1):
+        r = int(radius * (i / steps))
+        a = int(max_alpha * (1 - i / steps) ** 1.5)
+        if a <= 0 or r <= 0:
+            continue
+        d.ellipse([cx - r, cy - r, cx + r, cy + r],
+                  fill=(color[0], color[1], color[2], a))
+    try:
+        return layer.filter(ImageFilter.GaussianBlur(radius=radius * 0.15))
+    except Exception:
+        return layer
+
+
+def _draw_glass(img, box, radius=18, tint=(255, 240, 210, 14),
+                border=(255, 200, 120, 60), border_w=1):
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    d.rounded_rectangle(box, radius=radius, fill=tint, outline=border, width=border_w)
+    x1, y1, x2, y2 = box
+    d.line([(x1 + radius, y1 + 1), (x2 - radius, y1 + 1)],
+           fill=(255, 240, 200, 55), width=1)
+    img.alpha_composite(layer)
+
+
+def _paste_bar(img, x, y, w, h, ratio, c1, c2, radius=None):
+    if w <= 0 or h <= 0:
+        return
+    x, y, w, h = int(x), int(y), int(w), int(h)
+    bg_layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    bd = ImageDraw.Draw(bg_layer)
+    bd.rounded_rectangle([x, y, x + w, y + h], radius=(radius or h // 2),
+                         fill=(60, 46, 30, 150))
+    img.alpha_composite(bg_layer)
+
+    fw = int(w * max(0.0, min(1.0, ratio)))
+    if fw < 3:
+        return
+    grad = _h_gradient(fw, h, c1, c2)
+    r = radius if radius is not None else h // 2
+    mask = Image.new("L", (fw, h), 0)
+    md = ImageDraw.Draw(mask)
+    md.rounded_rectangle([0, 0, fw, h], radius=r, fill=255)
+    img.paste(grad, (x, y), mask)
+
+
+def _draw_donut(img, cx, cy, r_out, r_in, segments, empty_color=(70, 60, 50)):
+    total = sum(v for v, _ in segments)
+    if total <= 0:
+        layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        d = ImageDraw.Draw(layer)
+        d.ellipse([cx - r_out, cy - r_out, cx + r_out, cy + r_out],
+                  outline=empty_color, width=max(1, r_out - r_in))
+        img.alpha_composite(layer)
+        return
+
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    start = -90
+    for value, color in segments:
+        if value <= 0:
+            continue
+        angle = 360 * (value / total)
+        end = start + angle
+        d.pieslice([cx - r_out, cy - r_out, cx + r_out, cy + r_out],
+                   start=start, end=end, fill=color)
+        start = end
+    img.alpha_composite(layer)
+
+    inner = Image.new("RGBA", (r_in * 2, r_in * 2), (0, 0, 0, 0))
+    idd = ImageDraw.Draw(inner)
+    idd.ellipse([0, 0, r_in * 2, r_in * 2], fill=(26, 20, 14, 255))
+    img.alpha_composite(inner, (cx - r_in, cy - r_in))
+
+
+def _draw_dot(d, x, y, r, color):
+    d.ellipse([x - r, y - r, x + r, y + r], fill=color)
+
+
+def _draw_pill(img, x, y, w, h, value, color, font):
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    d.rounded_rectangle([x, y, x + w, y + h], radius=h // 2,
+                        fill=(color[0], color[1], color[2], 55),
+                        outline=color, width=1)
+    img.alpha_composite(layer)
+    d2 = ImageDraw.Draw(img)
+    s = str(value)
+    tw = _text_w(d2, s, font)
+    fs = _fsize(font, 14)
+    ty = y + (h - fs) / 2 - 2
+    d2.text((x + (w - tw) / 2, ty), s, font=font, fill=color)
+
+
+def render_stats_png(channel_name, leader_name, stats):
+    W, H = 1400, 1000
+    PAD = 32
+
+    img = _gradient_bg(W, H)
+    for center, radius, color, alpha in [
+        ((240, 220), 420, (255, 165, 0), 70),
+        ((W - 180, 140), 340, (255, 210, 60), 55),
+        ((W - 300, H - 120), 420, (255, 120, 0), 60),
+        ((160, H - 160), 320, (255, 200, 100), 40),
+    ]:
+        try:
+            glow = _radial_glow((W, H), center, radius, color, max_alpha=alpha)
+            img = Image.alpha_composite(img, glow)
+        except Exception as e:
+            log.warning(f"glow skip: {e}")
+
+    f_h1 = _font(30, True)
+    f_h2 = _font(16)
+    f_label = _font(12, True)
+    f_label_s = _font(11)
+    f_big = _font(44, True)
+    f_mid = _font(19, True)
+    f_val = _font(15, True)
+    f_small = _font(11)
+
+    head = [PAD, PAD, W - PAD, PAD + 92]
+    _draw_glass(img, head, radius=20, tint=(255, 235, 200, 18),
+                border=(255, 200, 120, 70), border_w=2)
+    d = ImageDraw.Draw(img)
+
+    lx, ly = PAD + 24, PAD + 22
+    d.rounded_rectangle([lx, ly, lx + 48, ly + 48], radius=12, fill=(255, 165, 0))
+    for i, w_bar in enumerate([30, 22, 26]):
+        d.rounded_rectangle([lx + 9, ly + 12 + i * 10,
+                             lx + 9 + w_bar, ly + 12 + i * 10 + 4],
+                            radius=2, fill=(30, 18, 6))
+
+    d.text((PAD + 92, PAD + 20), "СТАТИСТИКА ВОЙСА", font=f_h1, fill=(255, 215, 60))
+    d.text((PAD + 94, PAD + 60),
+           f"{channel_name}   •   Владелец: {leader_name}",
+           font=f_h2, fill=(200, 185, 165))
+
+    started = stats.get("started_at", time.time())
+    period_str = time.strftime("%d.%m.%Y %H:%M", time.localtime(started))
+    d.text((W - PAD - 200, PAD + 20), "ПЕРИОД ВЛАДЕНИЯ",
+           font=f_label, fill=(170, 160, 145))
+    d.text((W - PAD - 200, PAD + 38), period_str, font=f_h2, fill=(255, 210, 60))
+    d.text((W - PAD - 200, PAD + 60), "активный", font=f_small, fill=(140, 210, 100))
+
+    unique = len(stats.get("unique_visitors", []))
+    joins = stats.get("joins", 0)
+    sessions = stats.get("sessions", [])
+    total_time = sum(s["end"] - s["start"] for s in sessions if s.get("end"))
+    avg = (total_time / len(sessions)) if sessions else 0
+
+    kpi_y = PAD + 108
+    kpi_h = 150
+    gap = 16
+    kpi_w = (W - PAD * 2 - gap * 3) // 4
+    kpi_max_raw = max(unique, joins, int(total_time), int(avg))
+    kpi_den = max(5.0, float(kpi_max_raw))
+    kpi_ratios = [unique / kpi_den, joins / kpi_den, total_time / kpi_den, avg / kpi_den]
+    kpis = [
+        ("УНИКАЛЬНЫХ", str(unique), kpi_ratios[0], (255, 210, 60)),
+        ("ПОДКЛЮЧЕНИЙ", str(joins), kpi_ratios[1], (255, 165, 0)),
+        ("АКТИВНОСТЬ", _fmt_dur(total_time), kpi_ratios[2], (255, 120, 0)),
+        ("СРЕДНЯЯ СЕССИЯ", _fmt_dur(avg), kpi_ratios[3], (255, 215, 60)),
+    ]
+    for i, (label, value, ratio, accent) in enumerate(kpis):
+        x = PAD + i * (kpi_w + gap)
+        _draw_glass(img, [x, kpi_y, x + kpi_w, kpi_y + kpi_h],
+                    radius=16, tint=(255, 235, 200, 16),
+                    border=(255, 200, 120, 55))
+        d = ImageDraw.Draw(img)
+        d.rounded_rectangle([x + 18, kpi_y + 16, x + 18 + 36, kpi_y + 21],
+                            radius=3, fill=accent)
+        d.text((x + 18, kpi_y + 30), label, font=f_label, fill=(170, 160, 145))
+        d.text((x + 18, kpi_y + 54), value, font=f_big, fill=(250, 245, 235))
+        _paste_bar(img, x + 18, kpi_y + kpi_h - 26, kpi_w - 36, 8,
+                   ratio, (255, 120, 0), accent)
+        d = ImageDraw.Draw(img)
+
+    left_x = PAD
+    left_y = kpi_y + kpi_h + 16
+    left_w = int(W * 0.58)
+    left_h = 400
+    _draw_glass(img, [left_x, left_y, left_x + left_w, left_y + left_h],
+                radius=20, tint=(255, 235, 200, 16),
+                border=(255, 200, 120, 60))
+    d = ImageDraw.Draw(img)
+    d.text((left_x + 24, left_y + 20), "АКТИВНОСТЬ ПО СЕССИЯМ",
+           font=f_mid, fill=(255, 215, 60))
+    leg_line_y = left_y + 34
+    d.rounded_rectangle([left_x + left_w - 210, leg_line_y - 2,
+                         left_x + left_w - 196, leg_line_y + 2],
+                        radius=2, fill=(255, 165, 0))
+    d.text((left_x + left_w - 188, leg_line_y - 8), "длительность сессии",
+           font=f_small, fill=(150, 140, 125))
+
+    gx1 = left_x + 58
+    gx2 = left_x + left_w - 28
+    gy_top = left_y + 76
+    gy_bot = left_y + left_h - 78
+    label_y = gy_bot + 20
+
+    grid_n = 5
+    f_axis = _font(11)
+    for i in range(grid_n + 1):
+        yy = gy_top + (gy_bot - gy_top) * i // grid_n
+        d.line([(gx1, yy), (gx2, yy)], fill=(255, 200, 120, 22), width=1)
+        val_lbl = (grid_n - i) * 20
+        d.text((left_x + 14, yy - 7), str(val_lbl),
+               font=f_axis, fill=(150, 140, 125))
+
+    durations = [s["end"] - s["start"] for s in sessions[-8:] if s.get("end")]
+    n_bars = 8
+    bar_area_w = gx2 - gx1 - 20
+    bar_gap = 14
+    bar_w = max(20, (bar_area_w - (n_bars - 1) * bar_gap) // n_bars)
+    max_dur = max(durations) if durations else 1
+
+    for i in range(n_bars):
+        bx = gx1 + 10 + i * (bar_w + bar_gap)
+        dur = durations[i] if i < len(durations) else 0
+
+        if dur <= 0:
+            ph = 12
+            by = gy_bot - ph
+            d.rounded_rectangle([bx, by, bx + bar_w, gy_bot], radius=4,
+                                fill=(70, 55, 36, 200))
+            d.rounded_rectangle([bx, by, bx + bar_w, by + 3], radius=2,
+                                fill=(140, 100, 50))
+        else:
+            bh = int((dur / max_dur) * (gy_bot - gy_top - 10))
+            bh = max(12, bh)
+            by = gy_bot - bh
+            try:
+                glow_layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+                gd = ImageDraw.Draw(glow_layer)
+                gd.ellipse([bx - 6, gy_bot - 10, bx + bar_w + 6, gy_bot + 14],
+                           fill=(255, 165, 0, 90))
+                glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(8))
+                img.alpha_composite(glow_layer)
             except Exception:
                 pass
-            await interaction.response.edit_message(embed=embed, view=view)
-        except discord.errors.NotFound:
+            grad = _h_gradient(bar_w, bh, (255, 120, 0), (255, 215, 60))
+            mask = Image.new("L", (bar_w, bh), 0)
+            md = ImageDraw.Draw(mask)
+            md.rounded_rectangle([0, 0, bar_w, bh], radius=6, fill=255)
+            img.paste(grad, (bx, by), mask)
+            d = ImageDraw.Draw(img)
+            d.rounded_rectangle([bx, by - 3, bx + bar_w, by], radius=2,
+                                fill=(255, 230, 140))
+
+        label_txt = f"#{i+1:02d}"
+        tw = _text_w(d, label_txt, f_axis)
+        d.text((bx + bar_w / 2 - tw / 2, label_y), label_txt,
+               font=f_axis, fill=(150, 140, 125))
+
+    right_x = left_x + left_w + 16
+    right_w = W - PAD - right_x
+
+    pr_y = left_y
+    pr_h = 180
+    _draw_glass(img, [right_x, pr_y, right_x + right_w, pr_y + pr_h],
+                radius=20, tint=(255, 235, 200, 16),
+                border=(255, 200, 120, 60))
+    d = ImageDraw.Draw(img)
+    d.text((right_x + 22, pr_y + 16), "ПОСЕТИТЕЛИ", font=f_mid, fill=(255, 215, 60))
+
+    active_n = len(stats.get("active_sessions", {}))
+    vis_max = max(5.0, float(max(unique, joins, active_n)))
+    rows = [
+        ("Уникальных", unique, unique / vis_max, (255, 215, 60)),
+        ("Подключений", joins, joins / vis_max, (255, 165, 0)),
+        ("Активных сейчас", active_n, active_n / vis_max, (140, 210, 100)),
+    ]
+    ry = pr_y + 54
+    for label, val, ratio, color in rows:
+        d.text((right_x + 22, ry), label, font=f_label_s, fill=(170, 160, 145))
+        d.text((right_x + right_w - 60, ry - 2), str(val),
+               font=f_val, fill=(250, 245, 235))
+        _paste_bar(img, right_x + 22, ry + 18, right_w - 100, 8, ratio,
+                   color, color)
+        d = ImageDraw.Draw(img)
+        ry += 40
+
+    dn_y = pr_y + pr_h + 16
+    dn_h = 190
+    _draw_glass(img, [right_x, dn_y, right_x + right_w, dn_y + dn_h],
+                radius=20, tint=(255, 235, 200, 16),
+                border=(255, 200, 120, 60))
+    d = ImageDraw.Draw(img)
+    d.text((right_x + 22, dn_y + 16), "ДЕЙСТВИЯ", font=f_mid, fill=(255, 215, 60))
+
+    kicks = stats.get("kicks", 0)
+    mutes = stats.get("mutes", 0)
+    deafs = stats.get("deafs", 0)
+    bans_c = stats.get("bans", 0)
+    total_actions = kicks + mutes + deafs + bans_c
+
+    cx = right_x + 90
+    cy = dn_y + dn_h // 2 + 10
+    r_out = 52
+    r_in = 34
+    segments = [
+        (kicks, (255, 90, 70)),
+        (mutes, (255, 165, 0)),
+        (deafs, (255, 215, 60)),
+        (bans_c, (120, 180, 255)),
+    ]
+    _draw_donut(img, cx, cy, r_out, r_in, segments)
+
+    d = ImageDraw.Draw(img)
+    f_center_n = _font(22, True)
+    tw = _text_w(d, str(total_actions), f_center_n)
+    d.text((cx - tw / 2, cy - 13), str(total_actions),
+           font=f_center_n, fill=(250, 245, 235))
+    tw2 = _text_w(d, "ВСЕГО", f_label_s)
+    d.text((cx - tw2 / 2, cy + 12), "ВСЕГО", font=f_label_s, fill=(170, 160, 145))
+
+    leg_x = right_x + 180
+    leg_y = dn_y + 46
+    legend_items = [
+        ("Кики", kicks, (255, 90, 70)),
+        ("Мьюты микро", mutes, (255, 165, 0)),
+        ("Мьюты ушей", deafs, (255, 215, 60)),
+        ("Баны", bans_c, (120, 180, 255)),
+    ]
+    for i, (label, val, color) in enumerate(legend_items):
+        yy = leg_y + i * 30
+        _draw_dot(d, leg_x + 8, yy + 8, 6, color)
+        d.text((leg_x + 24, yy), label, font=f_label_s, fill=(170, 160, 145))
+        d.text((right_x + right_w - 40, yy), str(val), font=f_val,
+               fill=(250, 245, 235))
+
+    bottom_y = max(dn_y + dn_h + 16, left_y + left_h + 16)
+    bottom_h = H - PAD - 44 - bottom_y
+    half_w = (W - PAD * 2 - 16) // 2
+
+    _draw_glass(img, [PAD, bottom_y, PAD + half_w, bottom_y + bottom_h],
+                radius=20, tint=(255, 235, 200, 16),
+                border=(255, 200, 120, 60))
+    d = ImageDraw.Draw(img)
+    d.text((PAD + 22, bottom_y + 14), "МОДЕРАЦИЯ",
+           font=f_mid, fill=(255, 215, 60))
+
+    mod_rows = [
+        ("Кики", kicks, (255, 90, 70)),
+        ("Мьюты микро", mutes, (255, 165, 0)),
+        ("Мьюты ушей", deafs, (255, 215, 60)),
+        ("Баны", bans_c, (120, 180, 255)),
+        ("Разбаны", stats.get("unbans", 0), (140, 210, 100)),
+    ]
+    ry = bottom_y + 52
+    for label, val, color in mod_rows:
+        _draw_dot(d, PAD + 30, ry + 9, 5, color)
+        d.text((PAD + 46, ry), label, font=f_label_s, fill=(170, 160, 145))
+        _draw_pill(img, PAD + half_w - 90, ry - 1, 62, 24, val, color, f_val)
+        d = ImageDraw.Draw(img)
+        ry += 30
+
+    rx2 = PAD + half_w + 16
+    _draw_glass(img, [rx2, bottom_y, rx2 + half_w, bottom_y + bottom_h],
+                radius=20, tint=(255, 235, 200, 16),
+                border=(255, 200, 120, 60))
+    d = ImageDraw.Draw(img)
+    d.text((rx2 + 22, bottom_y + 14), "ЗАПРОСЫ НА ВХОД",
+           font=f_mid, fill=(255, 215, 60))
+
+    req_rows = [
+        ("Всего запросов", stats.get("requests", 0), (255, 215, 60)),
+        ("Одобрено", stats.get("approved", 0), (140, 210, 100)),
+        ("Отклонено", stats.get("denied", 0), (255, 90, 70)),
+    ]
+    ry = bottom_y + 52
+    for label, val, color in req_rows:
+        _draw_dot(d, rx2 + 30, ry + 9, 5, color)
+        d.text((rx2 + 46, ry), label, font=f_label_s, fill=(170, 160, 145))
+        _draw_pill(img, rx2 + half_w - 90, ry - 1, 62, 24, val, color, f_val)
+        d = ImageDraw.Draw(img)
+        ry += 34
+
+    pb_y = bottom_y + bottom_h - 40
+    d.text((rx2 + 22, pb_y - 22), "АКТИВНОСТЬ ЗА 24Ч",
+           font=f_label, fill=(170, 160, 145))
+    ratio = min(1.0, total_time / 86400) if total_time else 0
+    _paste_bar(img, rx2 + 22, pb_y, half_w - 120, 14, ratio,
+               (255, 120, 0), (255, 215, 60))
+    d = ImageDraw.Draw(img)
+    pct = f"{int(ratio * 100)}%"
+    pct_w = _text_w(d, pct, f_val)
+    d.text((rx2 + half_w - 22 - pct_w, pb_y - 2), pct,
+           font=f_val, fill=(255, 215, 60))
+
+    d.text((PAD, H - 20), "Мазафака Войс  •  статистика текущего владельца",
+           font=f_small, fill=(150, 140, 125))
+
+    out = img.convert("RGB")
+    buf = io.BytesIO()
+    out.save(buf, format="PNG", optimize=True)
+    buf.seek(0)
+    return buf
+
+
+# ============================================================
+# ПУБЛИЧНОЕ СООБЩЕНИЕ
+# ============================================================
+class OpenPanelButton(discord.ui.View):
+    def __init__(self, channel_id):
+        super().__init__(timeout=None)
+        self.channel_id = channel_id
+
+    @discord.ui.button(label="Открыть панель", emoji="👑", style=discord.ButtonStyle.primary)
+    async def open_btn(self, interaction, button):
+        # Отвечаем одним interaction callback, не создавая отдельный webhook
+        # followup после defer. Это убирает лишний запрос к /webhooks/...,
+        # на котором в логах возникал Cloudflare 429 / error 1015.
+        if voice_leaders.get(self.channel_id) != interaction.user.id:
+            await interaction.response.send_message(
+                "🚫 Только владелец войса может открыть панель.",
+                ephemeral=True
+            )
             return
-        except discord.errors.InteractionResponded:
-            await safe_followup(interaction, embed=build_update_log_embed(self.version, interaction.guild), view=UpdateLogsView(current=self.version))
-        except Exception as e:
-            print(f'❌ Ошибка в UpdateLogButton: {e}')
 
-class UpdateLogsView(discord.ui.View):
-    def __init__(self, current: str = 'v1.1'):
-        super().__init__(timeout=None)
-        self.current = current
-        self.buttons = {}
-        versions = ['v1.1', 'v1.2', 'v1.3', 'v1.4', 'v1.5', 'v1.6']
-        for i, v in enumerate(versions):
-            row = 0 if i < 5 else 1
-            btn = UpdateLogButton(v, active=(v == current), row=row)
-            self.buttons[v] = btn
-            self.add_item(btn)
-
-    def set_active(self, version: str):
-        self.current = version
-        for v, btn in self.buttons.items():
-            btn.style = discord.ButtonStyle.primary if v == version else discord.ButtonStyle.secondary
-
-def build_update_log_embed(version: str, guild: discord.Guild | None) -> discord.Embed:
-    if version == 'v1.1':
-        title = '📜 __**UPDATE LOGS — v1.1**__'
-        desc = f'>>> __**Релиз бота!**__ 🎉\n\n__**🎵 Песни:**__\n• Лашара\n• Вертитоп лошадь\n• Хватит меня булить\n\n__**📖 Гайд:**__ [нажми сюда]({GUIDE_URL})'
-        color = discord.Color.purple()
-    elif version == 'v1.2':
-        title = '📜 __**UPDATE LOGS — v1.2**__'
-        desc = '>>> __**🛠 Фикс:**__ музыка играла раз через раз — теперь играет всегда\n\n__**🎵 Новые песни:**__\n• В канаве\n• 1 час и 1 минуту'
-        color = discord.Color.blue()
-    elif version == 'v1.3':
-        title = '📜 __**UPDATE LOGS — v1.3**__'
-        desc = '>>> __**🎵 Новые песни:**__\n• Династия-Гемера\n• Пузико'
-        color = discord.Color.green()
-    elif version == 'v1.4':
-        title = '📜 __**UPDATE LOGS — v1.4**__'
-        desc = '>>> __**🛠 Фикс системы проигрывания музыки:**__\nопять перестала играть — теперь работает стабильно'
-        color = discord.Color.orange()
-    elif version == 'v1.5':
-        title = '📜 __**UPDATE LOGS — v1.5**__'
-        desc = '>>> __**🆕 Новая команда:**__ `!hub`\n\n__**🔄 Обновления:**__\n• Новый **List Музыки**\n• Кнопка **О мне**\n• Кнопка **Trusiki Music**\n• Кнопки **Play** на каждую песню\n• **Рекодинг системы проигрывания музыки**\n\n__**🎵 Новая песня:**__\n• Мазафако Funk'
-        color = discord.Color.gold()
-    elif version == 'v1.6':
-        title = '📜 __**UPDATE LOGS — v1.6**__'
-        desc = ('>>> __**🆕 Новая команда:**__ `!event-gta6 music`\n\n'
-                '__**🎵 Плейлист GTA 6:**__\n'
-                '• Blood In Your Eyes\n'
-                '• Love Is A Long Road\n'
-                '• Hot Together\n'
-                '• RHYNO\n\n'
-                '__**🔁 Плейлист зациклен.**__\n'
-                '__**🛠 Подкоманды:**__\n'
-                '• `!event-gta6 music next` — следующая\n'
-                '• `!event-gta6 music how` — что играет\n'
-                '• `!event-gta6 music stop` — остановить')
-        color = discord.Color.red()
-    else:
-        title = '📜 __**UPDATE LOGS**__'
-        desc = '>>> __**Патч не найден**__ ❌'
-        color = discord.Color.red()
-
-    embed = discord.Embed(title=title, description=desc, color=color)
-    embed.set_footer(text=f'⚡ Текущий патч: {version} ⚡')
-    if guild and guild.icon:
-        embed.set_author(name='🎧 Музыкальный Трусикинский бот', icon_url=guild.icon.url)
-    return embed
-
-# ============================================================
-# ================            HUB UI            ==============
-# ============================================================
-
-class HubMusicListButton(discord.ui.Button):
-    def __init__(self):
-        super().__init__(label='Лист Музыки', style=discord.ButtonStyle.primary, emoji='🎵', custom_id='hub_music_list', row=0)
-
-    async def callback(self, interaction: discord.Interaction):
-        ok = await safe_defer(interaction, ephemeral=True)
-        if not ok: return
-        try:
-            file = discord.File(PLAY_IMAGE, filename='play.png') if os.path.exists(PLAY_IMAGE) else None
-            embed = build_music_list_embed(interaction.guild)
-            if file:
-                embed.set_image(url='attachment://play.png')
-                await safe_followup(interaction, embed=embed, file=file)
-            else:
-                await safe_followup(interaction, embed=embed)
-        except Exception as e:
-            print(f'❌ Ошибка в music_list_button: {e}')
-            await safe_followup(interaction, content='❌ Ошибка при открытии списка.')
-
-class HubPlayMusicButton(discord.ui.Button):
-    def __init__(self):
-        super().__init__(label='Включить музыку', style=discord.ButtonStyle.success, emoji='▶️', custom_id='hub_play_music', row=0)
-
-    async def callback(self, interaction: discord.Interaction):
-        ok = await safe_defer(interaction, ephemeral=True)
-        if not ok: return
-        try:
-            file = discord.File(PLAY_IMAGE, filename='play.png') if os.path.exists(PLAY_IMAGE) else None
-            embed = build_play_embed(interaction.guild)
-            view = PlayView()
-            if file:
-                embed.set_image(url='attachment://play.png')
-                await safe_followup(interaction, embed=embed, view=view, file=file)
-            else:
-                await safe_followup(interaction, embed=embed, view=view)
-        except Exception as e:
-            print(f'❌ Ошибка в play_music_button: {e}')
-            await safe_followup(interaction, content='❌ Ошибка при открытии меню.')
-
-class HubAboutButton(discord.ui.Button):
-    def __init__(self):
-        super().__init__(label='О мне', style=discord.ButtonStyle.primary, emoji='ℹ️', custom_id='hub_about', row=1)
-
-    async def callback(self, interaction: discord.Interaction):
-        ok = await safe_defer(interaction, ephemeral=True)
-        if not ok: return
-        try:
-            file = discord.File(HUB_IMAGE, filename='hub.png') if os.path.exists(HUB_IMAGE) else None
-            embed = discord.Embed(
-                title='🎧 __**Музыкальный Трусикинский бот**__',
-                description=f'Привет! Я __**Музыкальный Трусикинский бот — РЕАЛ ОЧКОШНИК**__ 🎶\n\nЯ умею играть разные трусикинские песни, и я часто пащу 💀\nНо бывает иногда мне лень, и я иду либо спать, либо отдыхать от рабочей смены 😴\n\nМеня разработал участник этого сервера — {DEV_MENTION}',
-                color=discord.Color.purple()
+        channel = bot.get_channel(self.channel_id)
+        if channel is None:
+            await interaction.response.send_message(
+                "Канал не найден.", ephemeral=True
             )
-            embed.set_footer(text='⚡ РЕАЛ ОЧКОШНИК ⚡')
-            if file:
-                embed.set_image(url='attachment://hub.png')
-                await safe_followup(interaction, embed=embed, file=file)
-            else:
-                await safe_followup(interaction, embed=embed)
-        except Exception as e:
-            print(f'❌ Ошибка в about_button: {e}')
-            await safe_followup(interaction, content='❌ Ошибка при открытии "О мне".')
+            return
 
-class HubUpdateLogsButton(discord.ui.Button):
-    def __init__(self):
-        super().__init__(label='Update Logs', style=discord.ButtonStyle.secondary, emoji='📜', custom_id='hub_update_logs', row=1)
+        member = channel.guild.get_member(interaction.user.id)
+        if member is None or member.voice is None or member.voice.channel != channel:
+            await interaction.response.send_message(
+                "🚫 Ты должен быть в своём голосовом канале.",
+                ephemeral=True
+            )
+            return
 
-    async def callback(self, interaction: discord.Interaction):
-        ok = await safe_defer(interaction, ephemeral=True)
-        if not ok: return
+        embed = build_panel_embed(channel, member)
+        if PANEL_IMAGE_URL:
+            embed.set_image(url=PANEL_IMAGE_URL)
+
+        view = LeaderPanel(channel.id)
+
         try:
-            embed = build_update_log_embed('v1.1', interaction.guild)
-            file = discord.File(UPDATELOGS_IMAGE, filename='updatelogs.png') if os.path.exists(UPDATELOGS_IMAGE) else None
-            if file: embed.set_image(url='attachment://updatelogs.png')
-            view = UpdateLogsView(current='v1.1')
-            if file:
-                await safe_followup(interaction, embed=embed, view=view, file=file)
-            else:
-                await safe_followup(interaction, embed=embed, view=view)
-        except Exception as e:
-            print(f'❌ Ошибка в update_logs_button: {e}')
-            await safe_followup(interaction, content='❌ Ошибка при открытии Update Logs.')
+            # Первичный ответ на interaction вместо defer + followup.send.
+            await interaction.response.send_message(
+                embed=embed,
+                view=view,
+                ephemeral=True
+            )
+        except discord.HTTPException as exc:
+            # Не делаем повторный запрос автоматически: при Cloudflare 1015
+            # повторная отправка обычно только усиливает временный rate limit.
+            log.error(
+                "Не удалось открыть панель для user_id=%s, channel_id=%s: "
+                "HTTP %s, code=%s",
+                interaction.user.id,
+                self.channel_id,
+                getattr(exc, "status", "unknown"),
+                getattr(exc, "code", "unknown")
+            )
 
-class HubView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        self.add_item(HubMusicListButton())
-        self.add_item(HubPlayMusicButton())
-        self.add_item(HubAboutButton())
-        self.add_item(HubUpdateLogsButton())
-        self.add_item(discord.ui.Button(label='Trusiki Music', style=discord.ButtonStyle.link, emoji='🎧', url=TRUSIKI_MUSIC_URL, row=2))
-        self.add_item(discord.ui.Button(label='Гайд', style=discord.ButtonStyle.link, emoji='📖', url=GUIDE_URL, row=2))
 
-def build_hub_embed(guild: discord.Guild | None) -> discord.Embed:
-    embed = discord.Embed(
-        title='<:__:1408871102200938709> __**HUB — Музыкальный Трусикинский бот**__ <:__:1408871102200938709>',
-        description='Привет! Я __**Музыкальный Трусикинский бот — РЕАЛ ОЧКОШНИК**__ 🎶\n\nЯ могу включать разные песни из списка 📃\nПолный гайд на все функции — по кнопке **📖 Гайд**\nОткрыть веб-плеер Trusiki Music — по кнопке **🎧 Trusiki Music**\nВключить музыку прямо здесь — по кнопке **▶️ Включить музыку**\n\n⚠️ __**Чтобы бот зашёл — сядь в любой голосовой канал!**__',
-        color=discord.Color.purple()
+    @discord.ui.button(
+        label="GTA 6 EVENT", emoji="🎮",
+        style=discord.ButtonStyle.primary, row=1
     )
-    embed.set_footer(text='⚡ Нажми на кнопки ниже ⚡')
-    if guild and guild.icon:
-        embed.set_author(name='🎧 Музыкальный Трусикинский бот', icon_url=guild.icon.url)
-    return embed
+    async def gta6_event_btn(self, interaction, button):
+        if voice_leaders.get(self.channel_id) != interaction.user.id:
+            await interaction.response.send_message(
+                "🚫 Только владелец войса может открыть GTA 6 EVENT.",
+                ephemeral=True
+            )
+            return
 
-def build_music_list_embed(guild: discord.Guild | None) -> discord.Embed:
-    embed = discord.Embed(title='<:__:1408871102200938709> __**ДОСТУПНЫЕ ТРЕКИ**__ <:__:1408871102200938709>', description='__**Выбери свой звук!**__ 🎶', color=discord.Color.purple())
-    embed.add_field(name='<:emoji_65:1467848666474745896> __**Лашара**__', value='>>> __**Трусикинский хит**__', inline=False)
-    embed.add_field(name='<:__:1414229725965975714> __**Вертитоп лошадь**__', value='>>> __**Трусикинский хит**__', inline=False)
-    embed.add_field(name='<:SDAASD:1469017600649597143> __**Хватит меня булить**__', value='>>> __**Трусикинский хит**__', inline=False)
-    embed.add_field(name='<:kind_mifa:1536997306103111700> __**1 час и 1 минуту**__', value='>>> __**Трусикинский хит**__', inline=False)
-    embed.add_field(name='<:wertyuiop_loshara:1536998349658660945> __**Вертитоп — лашара**__', value='>>> __**Трусикинский хит**__', inline=False)
-    embed.add_field(name='<:emoji_64:1467848488074346546> __**В канаве**__', value='>>> __**Трусикинский хит**__', inline=False)
-    embed.add_field(name='<:emoji_65:1467848666474745896> __**Пузико**__ 🐾', value='>>> __**Трусикинский хит**__', inline=False)
-    embed.add_field(name='👑 __**Династия-Гемера**__', value='>>> __**Трусикинский хит**__', inline=False)
-    embed.add_field(name='🎸 __**Мазафако Funk**__', value='>>> __**Трусикинский хит**__', inline=False)
-    embed.add_field(name='🎤 __**Олд ТТД**__', value='>>> __**Трусикинский хит**__', inline=False)
-    embed.add_field(name='💪 __**Биг дилда опять за своё**__', value='>>> __**Трусикинский хит**__', inline=False)
-    embed.add_field(name='🤏 __**Если верти всё мало**__', value='>>> __**Трусикинский хит**__', inline=False)
-    embed.add_field(name='🌙 __**Верти, Мифа и ночной шалун**__', value='>>> __**Трусикинский хит**__', inline=False)
-    embed.add_field(name='🐷 __**Фублин жирный говноед**__', value='>>> __**Трусикинский хит**__', inline=False)
-    embed.add_field(name='🤡 __**Фубля лох**__', value='>>> __**Трусикинский хит**__', inline=False)
-    embed.add_field(name='🛠️ __**Способка не работает**__', value='>>> __**Трусикинский хит**__', inline=False)
-    embed.add_field(name='🩸 __**Blood In Your Eyes**__', value='>>> __**Плейлист GTA 6**__', inline=False)
-    embed.add_field(name='🛣️ __**Love Is A Long Road**__', value='>>> __**Плейлист GTA 6**__', inline=False)
-    embed.add_field(name='🔥 __**Hot Together**__', value='>>> __**Плейлист GTA 6**__', inline=False)
-    embed.add_field(name='🦏 __**RHYNO**__', value='>>> __**Плейлист GTA 6**__', inline=False)
-    embed.add_field(name='<:SADSAD:1469017625194663949> __**Всего треков: 20**__ <:SADSAD:1469017625194663949>', value='>>> __**Наслаждайся музыкой!**__ ⚡', inline=False)
-    embed.set_footer(text='⚡ Наслаждайся музыкой! ⚡')
-    if guild and guild.icon:
-        embed.set_author(name='🎧 Музыкальный Трусикинский бот', icon_url=guild.icon.url)
-    return embed
+        channel = bot.get_channel(self.channel_id)
+        member = channel.guild.get_member(interaction.user.id) if channel else None
+        if channel is None or member is None or member.voice is None or member.voice.channel != channel:
+            await interaction.response.send_message(
+                "🚫 Ты должен находиться в своём голосовом канале.",
+                ephemeral=True
+            )
+            return
 
-async def send_hub(ctx: commands.Context):
-    file = discord.File(HUB_IMAGE, filename='hub.png') if os.path.exists(HUB_IMAGE) else None
-    embed = build_hub_embed(ctx.guild)
-    if file:
-        embed.set_image(url='attachment://hub.png')
-        await ctx.send(embed=embed, view=HubView(), file=file)
-    else:
-        await ctx.send(embed=embed, view=HubView())
+        embed = discord.Embed(
+            title="🎮 GTA 6 EVENT",
+            description=(
+                "Управление музыкой доступно только тогда, когда музыкальный бот "
+                "находится **в этом же голосовом канале**. Если он подключён к "
+                "другому войсу, переключение будет заблокировано."
+            ),
+            color=discord.Color.from_rgb(218, 74, 190)
+        )
+        if PANEL_IMAGE_URL:
+            embed.set_image(url=PANEL_IMAGE_URL)
 
-# ============================================================
-# ====================    ВОСПРОИЗВЕДЕНИЕ    =================
-# ============================================================
+        view = GTA6EventPanel(self.channel_id)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-async def play_audio_by_url(voice_client, url, track_name, generation):
-    if voice_client is None: return
 
-    bot.current_track = track_name
-    bot.current_url = url
-    bot.loop_running = True
-    await asyncio.sleep(0.3)
-    fail_count = 0
-    max_fails = 3
+class GTA6TargetChannelSelect(discord.ui.Select):
+    def __init__(self, owner_channel_id, target_channel_id=None):
+        self.owner_channel_id = owner_channel_id
+        owner_channel = bot.get_channel(owner_channel_id)
+        guild = owner_channel.guild if owner_channel else None
+        choices = []
 
-    while bot.current_generation == generation:
-        if voice_client is None or not voice_client.is_connected():
-            print('🔌 Отключён от войса, выхожу из цикла воспроизведения')
-            bot.loop_running = False
-            bot.currently_playing = False
-            break
+        if guild:
+            for voice_channel in guild.voice_channels:
+                other_bots = [
+                    m for m in voice_channel.members
+                    if m.bot and (bot.user is None or m.id != bot.user.id)
+                ]
+                if other_bots:
+                    bot_names = ", ".join(m.display_name for m in other_bots[:2])
+                    choices.append(discord.SelectOption(
+                        label=voice_channel.name[:100],
+                        value=str(voice_channel.id),
+                        description=f"Бот: {bot_names}"[:100],
+                        default=(voice_channel.id == target_channel_id)
+                    ))
+
+        if not choices:
+            choices = [discord.SelectOption(
+                label="Другие боты не найдены",
+                value="0",
+                description="Подключи музыкального бота к голосовому каналу"
+            )]
+
+        super().__init__(
+            placeholder="🎧 Выбери войс с музыкальным ботом",
+            min_values=1,
+            max_values=1,
+            options=choices[:25],
+            row=0
+        )
+
+    async def callback(self, interaction):
+        if voice_leaders.get(self.owner_channel_id) != interaction.user.id:
+            await interaction.response.send_message(
+                "🚫 Только владелец твоего войса может менять канал управления.",
+                ephemeral=True
+            )
+            return
+        if self.values[0] == "0":
+            await interaction.response.send_message(
+                "❌ Не найден другой бот в голосовых каналах этого сервера.",
+                ephemeral=True
+            )
+            return
+
+        self.view.target_channel_id = int(self.values[0])
+        selected = interaction.guild.get_channel(self.view.target_channel_id)
+        await interaction.response.edit_message(
+            content=f"🎧 Команды будут отправляться в чат войса **{selected.name}**.",
+            embed=interaction.message.embeds[0] if interaction.message.embeds else None,
+            view=self.view
+        )
+
+
+class GTA6EventPanel(discord.ui.View):
+    def __init__(self, owner_channel_id):
+        super().__init__(timeout=300)
+        self.owner_channel_id = owner_channel_id
+
+    async def _send_event_command(self, interaction, command):
+        owner_channel = bot.get_channel(self.owner_channel_id)
+        if owner_channel is None:
+            await interaction.response.send_message(
+                "❌ Твой голосовой канал не найден.", ephemeral=True
+            )
+            return
+
+        if voice_leaders.get(self.owner_channel_id) != interaction.user.id:
+            await interaction.response.send_message(
+                "🚫 Только владелец твоего войса может использовать GTA 6 EVENT.",
+                ephemeral=True
+            )
+            return
+
+        member = owner_channel.guild.get_member(interaction.user.id)
+        if member is None or member.voice is None or member.voice.channel.id != self.owner_channel_id:
+            await interaction.response.send_message(
+                "🚫 Ты должен оставаться в своём голосовом канале.",
+                ephemeral=True
+            )
+            return
+
+        # Управляем только музыкальным ботом, который находится в том же войсе.
+        # Нельзя отправлять команды в чужой войс и переключать чужую музыку.
+        bots_here = [
+            m for m in owner_channel.members
+            if m.bot and (bot.user is None or m.id != bot.user.id)
+        ]
+        if not bots_here:
+            bots_elsewhere = [
+                vc for vc in owner_channel.guild.voice_channels
+                if any(m.bot and (bot.user is None or m.id != bot.user.id) for m in vc.members)
+            ]
+            if bots_elsewhere:
+                names = ", ".join(vc.name for vc in bots_elsewhere[:3])
+                message = (
+                    "🚫 Музыкальный бот сейчас находится в другом войсе "
+                    f"({names}). Переключение музыки заблокировано. "
+                    "Подключи музыкального бота к своему войсу."
+                )
+            else:
+                message = "❌ В твоём войсе нет музыкального бота."
+            await interaction.response.send_message(message, ephemeral=True)
+            return
+
+        bot_member = owner_channel.guild.me
+        permissions = owner_channel.permissions_for(bot_member) if bot_member else None
+        if permissions is None or not permissions.send_messages:
+            await interaction.response.send_message(
+                "❌ У моего бота нет права «Отправлять сообщения» в чате твоего войса.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.send_message(
+            f"⏳ Отправляю команду в чат **{owner_channel.name}**…",
+            ephemeral=True
+        )
 
         try:
-            print(f'🎵 Играет: {track_name}')
-            # Убран -loglevel error, чтобы видеть все сообщения FFmpeg
-            audio_source = discord.FFmpegPCMAudio(
-                url,
-                executable=FFMPEG_PATH,
-                before_options="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
-                options="-vn"
+            await owner_channel.send(content=command)
+        except discord.Forbidden:
+            await interaction.edit_original_response(
+                content="❌ Discord запретил отправку в чат твоего войса. Проверь права бота."
             )
-            audio_source = discord.PCMVolumeTransformer(audio_source, volume=bot.volume / 100)
+            return
+        except discord.HTTPException as exc:
+            log.warning(
+                "Не удалось отправить GTA 6 EVENT команду "
+                "(owner_channel_id=%s, command=%s): %s",
+                self.owner_channel_id, command, exc
+            )
+            await interaction.edit_original_response(
+                content=f"❌ Не удалось отправить команду в чат войса (HTTP {exc.status})."
+            )
+            return
 
-            def after_playing(error, _vc=voice_client, _gen=generation):
-                if error:
-                    print(f'❌ Ошибка воспроизведения: {error}')
-                else:
-                    print(f'✅ Трек закончился без ошибок: {track_name}')
-                if getattr(bot, 'event_chain_active', False) and bot.current_generation == _gen:
-                    try:
-                        if _vc and _vc.is_connected():
-                            asyncio.run_coroutine_threadsafe(_advance_event_chain(_vc), bot.loop)
-                    except Exception as e:
-                        print(f'❌ Ошибка запуска следующего трека плейлиста: {e}')
+        await interaction.edit_original_response(
+            content=f"✅ Команда отправлена в чат твоего войса: `{command}`"
+        )
 
-            voice_client.play(audio_source, after=after_playing)
-            bot.currently_playing = True
-            fail_count = 0
+    @discord.ui.button(label="Музыка: ВКЛ", emoji="🎵", style=discord.ButtonStyle.success, row=0)
+    async def music_toggle_btn(self, interaction, button):
+        await self._send_event_command(interaction, "!event-gta6 music")
 
-            while voice_client.is_playing() and bot.current_generation == generation:
-                await asyncio.sleep(0.3)
-                if not voice_client.is_connected():
-                    print('🔌 Соединение потеряно во время игры')
-                    bot.loop_running = False
-                    bot.currently_playing = False
-                    return
-                if bot.current_url != url:
-                    print(f'🔄 Смена трека на: {bot.current_track}')
-                    voice_client.stop()
-                    return
-            await asyncio.sleep(0.3)
+    @discord.ui.button(label="Переключить музыку", emoji="⏭️", style=discord.ButtonStyle.primary, row=1)
+    async def music_next_btn(self, interaction, button):
+        await self._send_event_command(interaction, "!event-gta6 music next")
 
-        except discord.errors.ClientException as e:
-            fail_count += 1
-            print(f'❌ Клиентская ошибка ({fail_count}/{max_fails}): {e}')
-            if fail_count >= max_fails:
-                print('🛑 Слишком много ошибок, останавливаюсь')
-                bot.loop_running = False
-                bot.currently_playing = False
-                break
-            await asyncio.sleep(2)
-        except Exception as e:
-            fail_count += 1
-            print(f'❌ Ошибка ({fail_count}/{max_fails}): {e}')
-            if fail_count >= max_fails:
-                print('🛑 Слишком много ошибок, останавливаюсь')
-                bot.loop_running = False
-                bot.currently_playing = False
-                break
-            await asyncio.sleep(3)
+    @discord.ui.button(label="Сейчас играет", emoji="🎧", style=discord.ButtonStyle.secondary, row=1)
+    async def music_how_btn(self, interaction, button):
+        await self._send_event_command(interaction, "!event-gta6 music how")
 
-    bot.loop_running = False
 
-async def _advance_event_chain(voice_client, forced_index: int | None = None):
-    if not voice_client or not voice_client.is_connected():
-        bot.event_chain_active = False
+def build_open_embed(channel, leader):
+    locked = is_locked(channel)
+    banned_count = len(banned_users.get(channel.id, {}))
+    cur_limit = get_limit(channel)
+    limit_str = f"👥 Лимит: **{cur_limit}**" if cur_limit else "👥 Лимит: **нет**"
+    wl = "🔒 включён" if whitelist_enabled(channel.id) else "🔓 выключен"
+
+    embed = discord.Embed(
+        title=f"👑 Владелец войса: {leader.display_name}",
+        description=(
+            f"🔊 Канал: **{channel.name}**\n"
+            f"{limit_str}\n"
+            f"Вход: {'🔒 **закрыт для всех**' if locked else '🔓 **открыт**'}\n"
+            f"👥 Только свои: {wl}\n"
+            f"🚫 Забанено: **{banned_count}**\n\n"
+            "Нажми **👑 Открыть панель**, чтобы управлять каналом.\n"
+            "*Кнопка доступна только владельцу.*"
+        ),
+        color=discord.Color.red() if locked else discord.Color.gold(),
+    )
+    if PANEL_IMAGE_URL:
+        embed.set_image(url=PANEL_IMAGE_URL)
+    embed.set_footer(text="Мазафака Войс")
+    return embed
+
+
+async def send_open_message(channel, leader_id):
+    leader = channel.guild.get_member(leader_id)
+    if not leader:
         return
+    old = lock_messages.pop(channel.id, None)
+    if old:
+        try:
+            await old.delete()
+        except (discord.NotFound, discord.Forbidden):
+            pass
+    try:
+        embed = build_open_embed(channel, leader)
+        view = OpenPanelButton(channel.id)
+        content = build_panel_content(leader.id)
+        msg = await channel.send(content=content, embed=embed, view=view)
+        lock_messages[channel.id] = msg
+    except (discord.Forbidden, AttributeError) as e:
+        log.warning(f"Не могу отправить панель в {channel.name}: {e}")
 
-    if forced_index is not None:
-        bot.event_chain_index = forced_index % len(EVENT_CHAIN)
+
+async def refresh_lock_message(channel):
+    leader_id = voice_leaders.get(channel.id)
+    if leader_id:
+        await send_open_message(channel, leader_id)
     else:
-        bot.event_chain_index = (bot.event_chain_index + 1) % len(EVENT_CHAIN)
+        old = lock_messages.pop(channel.id, None)
+        if old:
+            try:
+                await old.delete()
+            except (discord.NotFound, discord.Forbidden):
+                pass
 
-    key, label = EVENT_CHAIN[bot.event_chain_index]
-    url = TRACKS.get(key)
-    if not url:
-        bot.event_chain_active = False
-        return
 
-    bot.current_generation += 1
-    my_gen = bot.current_generation
-    bot.current_track = label
-    bot.current_url = url
-    print(f'🔁 Плейлист GTA 6: переходим к "{label}"')
-    await asyncio.sleep(0.5)
-    asyncio.create_task(play_audio_by_url(voice_client, url, label, my_gen))
+# ============================================================
+# ГЛАВНАЯ ПАНЕЛЬ ЛИДЕРА
+# ============================================================
+class LeaderPanel(discord.ui.View):
+    def __init__(self, channel_id):
+        super().__init__(timeout=None)
+        self.channel_id = channel_id
 
+    async def _require_leader(self, interaction):
+        await interaction.response.defer(ephemeral=True)
+        channel = bot.get_channel(self.channel_id)
+        if not channel:
+            await interaction.followup.send("Канал не найден.", ephemeral=True)
+            return None
+        if voice_leaders.get(self.channel_id) != interaction.user.id:
+            await interaction.followup.send(
+                "🚫 Только **лидер канала** может управлять.", ephemeral=True)
+            return None
+        member = channel.guild.get_member(interaction.user.id)
+        if not member or not member.voice or member.voice.channel != channel:
+            await interaction.followup.send(
+                "🚫 Ты должен быть в своём голосовом канале.", ephemeral=True)
+            return None
+        return channel
+
+    @discord.ui.button(label="Кикнуть", emoji="🦶", style=discord.ButtonStyle.danger, row=0)
+    async def kick_btn(self, interaction, button):
+        channel = await self._require_leader(interaction)
+        if not channel:
+            return
+        view = MemberSelectView(channel, action="kick")
+        embed = build_member_select_embed(channel, "kick")
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+    @discord.ui.button(label="Микро", emoji="🔇", style=discord.ButtonStyle.primary, row=0)
+    async def mute_btn(self, interaction, button):
+        channel = await self._require_leader(interaction)
+        if not channel:
+            return
+        view = MemberSelectView(channel, action="mute")
+        embed = build_member_select_embed(channel, "mute")
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+    @discord.ui.button(label="Уши", emoji="🎧", style=discord.ButtonStyle.primary, row=0)
+    async def deaf_btn(self, interaction, button):
+        channel = await self._require_leader(interaction)
+        if not channel:
+            return
+        view = MemberSelectView(channel, action="deaf")
+        embed = build_member_select_embed(channel, "deaf")
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+    @discord.ui.button(label="Закрыть вход", emoji="🔒", style=discord.ButtonStyle.danger, row=1)
+    async def lock_btn(self, interaction, button):
+        channel = await self._require_leader(interaction)
+        if not channel:
+            return
+        locked_channels.add(channel.id)
+        await interaction.followup.send("🔒 Вход закрыт для всех.", ephemeral=True)
+        await refresh_lock_message(channel)
+
+    @discord.ui.button(label="Открыть вход", emoji="🔓", style=discord.ButtonStyle.success, row=1)
+    async def unlock_btn(self, interaction, button):
+        channel = await self._require_leader(interaction)
+        if not channel:
+            return
+        locked_channels.discard(channel.id)
+        await interaction.followup.send("🔓 Вход открыт для всех.", ephemeral=True)
+        await refresh_lock_message(channel)
+
+    @discord.ui.button(label="Только свои", emoji="👥", style=discord.ButtonStyle.primary, row=1)
+    async def whitelist_btn(self, interaction, button):
+        channel = await self._require_leader(interaction)
+        if not channel:
+            return
+        view = WhitelistPanel(channel)
+        embed = build_whitelist_embed(channel)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+    @discord.ui.button(label="Забанить", emoji="🚫", style=discord.ButtonStyle.danger, row=2)
+    async def ban_btn(self, interaction, button):
+        channel = await self._require_leader(interaction)
+        if not channel:
+            return
+        view = BanTypeView(channel)
+        embed = discord.Embed(
+            title="🚫 Забанить вход — выбери тип",
+            description=(
+                "**⏳ Временный бан** — блокировка на срок, автоснятие\n"
+                "**🔒 Постоянный бан** — навсегда, до ручного разбана"
+            ),
+            color=discord.Color.dark_red(),
+        )
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+    @discord.ui.button(label="Разбанить", emoji="✅", style=discord.ButtonStyle.success, row=2)
+    async def unban_btn(self, interaction, button):
+        channel = await self._require_leader(interaction)
+        if not channel:
+            return
+        if not banned_users.get(channel.id):
+            await interaction.followup.send("Список банов пуст 🤷", ephemeral=True)
+            return
+        view = BanListView(channel, page=0)
+        embed = build_banlist_embed(channel, 0)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+    @discord.ui.button(label="Список банов", emoji="📋", style=discord.ButtonStyle.secondary, row=2)
+    async def banlist_btn(self, interaction, button):
+        channel = await self._require_leader(interaction)
+        if not channel:
+            return
+        if not banned_users.get(channel.id):
+            await interaction.followup.send("Список банов пуст 🤷", ephemeral=True)
+            return
+        view = BanListView(channel, page=0)
+        embed = build_banlist_embed(channel, 0)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+    @discord.ui.button(label="Лимит", emoji="🔢", style=discord.ButtonStyle.primary, row=3)
+    async def limit_btn(self, interaction, button):
+        channel = bot.get_channel(self.channel_id)
+        if not channel:
+            await interaction.response.send_message("Канал не найден.", ephemeral=True)
+            return
+        if voice_leaders.get(self.channel_id) != interaction.user.id:
+            await interaction.response.send_message(
+                "🚫 Только **лидер канала** может управлять.", ephemeral=True)
+            return
+        member = channel.guild.get_member(interaction.user.id)
+        if not member or not member.voice or member.voice.channel != channel:
+            await interaction.response.send_message(
+                "🚫 Ты должен быть в своём голосовом канале.", ephemeral=True)
+            return
+        await interaction.response.send_modal(LimitModal(channel.id))
+
+    @discord.ui.button(label="Снять лимит", emoji="♻️", style=discord.ButtonStyle.secondary, row=3)
+    async def reset_limit_btn(self, interaction, button):
+        channel = await self._require_leader(interaction)
+        if not channel:
+            return
+        ok = await apply_limit(channel, 0)
+        text = "♻️ Лимит снят." if ok else "🚫 Не удалось."
+        await interaction.followup.send(text, ephemeral=True)
+        await refresh_lock_message(channel)
+
+    @discord.ui.button(label="Передать", emoji="👑", style=discord.ButtonStyle.primary, row=4)
+    async def transfer_btn(self, interaction, button):
+        channel = await self._require_leader(interaction)
+        if not channel:
+            return
+        view = MemberSelectView(channel, action="transfer")
+        embed = build_member_select_embed(channel, "transfer")
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+    @discord.ui.button(label="Очередь", emoji="📊", style=discord.ButtonStyle.secondary, row=4)
+    async def queue_btn(self, interaction, button):
+        await interaction.response.defer(ephemeral=True)
+        channel = bot.get_channel(self.channel_id)
+        if not channel:
+            await interaction.followup.send("Канал не найден.", ephemeral=True)
+            return
+        q = voice_queues.get(self.channel_id, deque())
+        if not q:
+            await interaction.followup.send("Очередь пуста 🤷", ephemeral=True)
+            return
+        leader_id = voice_leaders.get(self.channel_id)
+        lines = []
+        for i, mid in enumerate(q, 1):
+            mem = channel.guild.get_member(mid)
+            name = mem.display_name if mem else f"id={mid}"
+            crown = " 👑" if mid == leader_id else ""
+            lines.append(f"`{i}.` {name}{crown}")
+        embed = discord.Embed(title=f"📊 Очередь — {channel.name}",
+                              description="\n".join(lines),
+                              color=discord.Color.blurple())
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="Статистика", emoji="📈", style=discord.ButtonStyle.success, row=4)
+    async def stats_btn(self, interaction, button):
+        channel = await self._require_leader(interaction)
+        if not channel:
+            return
+        st = ensure_stats(channel.id, interaction.user.id)
+        leader = channel.guild.get_member(interaction.user.id)
+        try:
+            buf = render_stats_png(channel.name, leader.display_name if leader else "—", st)
+        except Exception as e:
+            log.warning(f"Ошибка рендера статистики: {e}")
+            await interaction.followup.send(
+                "🚫 Не могу сгенерировать картинку (проверь Pillow/шрифты).",
+                ephemeral=True)
+            return
+        file = discord.File(fp=buf, filename="stats.png")
+        embed = discord.Embed(title="📈 Статистика текущего владельца",
+                              description=f"Канал: **{channel.name}**",
+                              color=discord.Color.gold())
+        embed.set_image(url="attachment://stats.png")
+        await interaction.followup.send(embed=embed, file=file, ephemeral=True)
+
+    @discord.ui.button(label="Очистить", emoji="🧹", style=discord.ButtonStyle.danger, row=4)
+    async def clear_btn(self, interaction, button):
+        channel = await self._require_leader(interaction)
+        if not channel:
+            return
+        embed = discord.Embed(
+            title="🧹 Очистка комнаты",
+            description=("Вы действительно хотите вернуть комнату к стандартным настройкам?\n"
+                         "**Все изменения владельца будут сброшены.**"),
+            color=discord.Color.orange(),
+        )
+        view = ClearConfirmView(channel)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+
+def build_panel_embed(channel, leader):
+    q = voice_queues.get(channel.id, deque())
+    members_count = len([m for m in channel.members if not m.bot])
+    locked = is_locked(channel)
+    banned_count = len(banned_users.get(channel.id, {}))
+    cur_limit = get_limit(channel)
+    limit_str = (f"👥 **{members_count} / {cur_limit}**" if cur_limit
+                 else f"👥 **{members_count}** (без лимита)")
+    wl = "🔒 включён" if whitelist_enabled(channel.id) else "🔓 выключен"
+
+    embed = discord.Embed(
+        title=f"👑 {leader.display_name} — панель управления",
+        description=(
+            f"🔊 Канал: **{channel.name}**\n"
+            f"{limit_str}\n"
+            f"📊 В очереди: **{len(q)}**\n"
+            f"🚫 Забанено: **{banned_count}**\n"
+            f"👥 Только свои: {wl}\n"
+            f"Вход: {'🔒 **закрыт**' if locked else '🔓 **открыт**'}"
+        ),
+        color=discord.Color.red() if locked else discord.Color.gold(),
+    )
+    embed.add_field(
+        name="Управление",
+        value=(
+            "🦶 **Кикнуть**  •  🔇 **Микро**  •  🎧 **Уши**\n"
+            "🔒 **Закрыть вход**  •  🔓 **Открыть вход**  •  👥 **Только свои**\n"
+            "🚫 **Забанить**  •  ✅ **Разбанить**  •  📋 **Список банов**\n"
+            "🔢 **Лимит**  •  ♻️ **Снять лимит**  •  👑 **Передать**\n"
+            "📊 **Очередь**  •  📈 **Статистика**  •  🧹 **Очистить**"
+        ),
+        inline=False,
+    )
+    embed.set_footer(text="Мазафака Войс • панель видна только тебе")
+    return embed
+
+
+# ============================================================
+# МОДАЛКА ЛИМИТА
+# ============================================================
+class LimitModal(discord.ui.Modal, title="Лимит участников"):
+    limit_input = discord.ui.TextInput(
+        label="Максимум участников",
+        placeholder="Число от 0 до 99. 0 — без лимита.",
+        required=True, max_length=2,
+    )
+
+    def __init__(self, channel_id):
+        super().__init__()
+        self.channel_id = channel_id
+
+    async def on_submit(self, interaction):
+        await interaction.response.defer(ephemeral=True)
+        if voice_leaders.get(self.channel_id) != interaction.user.id:
+            await interaction.followup.send("🚫 Только лидер канала.", ephemeral=True)
+            return
+        raw = self.limit_input.value.strip()
+        if not raw.isdigit():
+            await interaction.followup.send("🚫 Введи число 0..99.", ephemeral=True)
+            return
+        limit = int(raw)
+        if not (0 <= limit <= 99):
+            await interaction.followup.send("🚫 Допустимо 0..99.", ephemeral=True)
+            return
+        channel = bot.get_channel(self.channel_id)
+        if not channel:
+            await interaction.followup.send("Канал не найден.", ephemeral=True)
+            return
+        if limit == 0:
+            ok = await apply_limit(channel, 0)
+            if not ok:
+                await interaction.followup.send("🚫 Нет прав.", ephemeral=True)
+                return
+            await interaction.followup.send("♻️ Лимит снят.", ephemeral=True)
+            await refresh_lock_message(channel)
+            return
+        current = len([m for m in channel.members if not m.bot])
+        if current > limit:
+            leader_id = voice_leaders.get(self.channel_id)
+            non_leaders = [m for m in channel.members if not m.bot and m.id != leader_id]
+            keep = max(0, limit - 1) if leader_id else limit
+            for m in non_leaders[keep:]:
+                try:
+                    await m.move_to(None)
+                except discord.Forbidden:
+                    pass
+                remove_member_from_queue(self.channel_id, m.id)
+                await notify_dm(m, content=(
+                    f"👥 **{interaction.user.display_name}** установил лимит "
+                    f"**{limit}** в **{channel.name}** — вы выгнаны."))
+        ok = await apply_limit(channel, limit)
+        if not ok:
+            await interaction.followup.send("🚫 Нет прав.", ephemeral=True)
+            return
+        await interaction.followup.send(f"👥 Лимит: **{limit}**.", ephemeral=True)
+        await refresh_lock_message(channel)
+
+
+# ============================================================
+# WHITELIST PANEL
+# ============================================================
+class WhitelistPanel(discord.ui.View):
+    def __init__(self, channel):
+        super().__init__(timeout=300)
+        self.channel_id = channel.id
+        self._rebuild()
+
+    def _rebuild(self):
+        self.clear_items()
+        enabled = whitelist_enabled(self.channel_id)
+
+        toggle = discord.ui.Button(
+            label="Отключить" if enabled else "Включить",
+            emoji="🔓" if enabled else "🔒",
+            style=discord.ButtonStyle.danger if enabled else discord.ButtonStyle.success,
+            row=0,
+        )
+        toggle.callback = self._toggle_cb()
+        self.add_item(toggle)
+
+        add_btn = discord.ui.Button(label="Добавить", emoji="➕",
+                                    style=discord.ButtonStyle.primary, row=0,
+                                    disabled=not enabled)
+        add_btn.callback = self._add_cb()
+        self.add_item(add_btn)
+
+        rem_btn = discord.ui.Button(label="Убрать", emoji="➖",
+                                    style=discord.ButtonStyle.secondary, row=0,
+                                    disabled=not enabled)
+        rem_btn.callback = self._remove_cb()
+        self.add_item(rem_btn)
+
+        close_btn = discord.ui.Button(label="Закрыть", emoji="✖️",
+                                      style=discord.ButtonStyle.danger, row=0)
+        close_btn.callback = self._close_cb()
+        self.add_item(close_btn)
+
+    async def _check(self, interaction):
+        await interaction.response.defer(ephemeral=True)
+        if voice_leaders.get(self.channel_id) != interaction.user.id:
+            await interaction.followup.send("🚫 Только лидер.", ephemeral=True)
+            return None
+        channel = bot.get_channel(self.channel_id)
+        if not channel:
+            await interaction.followup.send("Канал не найден.", ephemeral=True)
+            return None
+        return channel
+
+    def _toggle_cb(self):
+        async def cb(interaction):
+            channel = await self._check(interaction)
+            if not channel:
+                return
+            if whitelist_enabled(channel.id):
+                whitelist_mode.discard(channel.id)
+                trusted_users.pop(channel.id, None)
+                await interaction.followup.send(
+                    "🔓 Режим «Только свои» отключён.", ephemeral=True)
+            else:
+                whitelist_mode.add(channel.id)
+                await interaction.followup.send(
+                    "🔒 Режим «Только свои» включён.", ephemeral=True)
+            await refresh_lock_message(channel)
+            self._rebuild()
+            await safe_edit_original(interaction,
+                                     embed=build_whitelist_embed(channel), view=self)
+        return cb
+
+    def _add_cb(self):
+        async def cb(interaction):
+            channel = await self._check(interaction)
+            if not channel:
+                return
+            if not whitelist_enabled(channel.id):
+                await interaction.followup.send(
+                    "🚫 Сначала включи режим «Только свои».", ephemeral=True)
+                return
+            view = WhitelistAddSelectView(channel, page=0)
+            embed = build_whitelist_add_embed(channel, 0)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        return cb
+
+    def _remove_cb(self):
+        async def cb(interaction):
+            channel = await self._check(interaction)
+            if not channel:
+                return
+            if not trusted_users.get(channel.id):
+                await interaction.followup.send("Список доверенных пуст 🤷", ephemeral=True)
+                return
+            view = WhitelistRemoveSelectView(channel, page=0)
+            embed = build_whitelist_remove_embed(channel, 0)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        return cb
+
+    def _close_cb(self):
+        async def cb(interaction):
+            try:
+                await interaction.response.defer()
+                await interaction.delete_original_response()
+            except (discord.NotFound, discord.HTTPException):
+                pass
+        return cb
+
+
+def build_whitelist_embed(channel):
+    enabled = whitelist_enabled(channel.id)
+    trusted = trusted_users.get(channel.id, set())
+    names = []
+    for uid in trusted:
+        m = channel.guild.get_member(uid)
+        names.append(f"• {m.display_name if m else f'id={uid}'}")
+    desc = (
+        f"**Статус:** {'🔒 ВКЛЮЧЁН' if enabled else '🔓 выключен'}\n"
+        f"**Доверенных:** {len(trusted)}\n\n"
+        + ("\n".join(names) if names else "*Список доверенных пуст*")
+    )
+    return discord.Embed(title="👥 Режим «Только свои»", description=desc,
+                         color=discord.Color.orange() if enabled else discord.Color.greyple())
+
+
+def build_whitelist_add_embed(channel, page):
+    leader_id = voice_leaders.get(channel.id)
+    members = [m for m in channel.guild.members
+               if not m.bot and m.id != leader_id and not is_trusted(channel.id, m.id)]
+    start = page * PER_PAGE
+    lines = [f"• {m.display_name}" for m in members[start:start + PER_PAGE]]
+    desc = "\n".join(lines) if lines else "Некого добавлять 🤷"
+    return discord.Embed(title="➕ Добавить доверенного", description=desc,
+                         color=discord.Color.green())
+
+
+def build_whitelist_remove_embed(channel, page):
+    trusted = list(trusted_users.get(channel.id, set()))
+    start = page * PER_PAGE
+    lines = []
+    for uid in trusted[start:start + PER_PAGE]:
+        m = channel.guild.get_member(uid)
+        lines.append(f"• {m.display_name if m else f'id={uid}'}")
+    desc = "\n".join(lines) if lines else "Список пуст 🤷"
+    return discord.Embed(title="➖ Убрать доверенного", description=desc,
+                         color=discord.Color.orange())
+
+
+class WhitelistAddSelectView(discord.ui.View):
+    def __init__(self, channel, page=0):
+        super().__init__(timeout=180)
+        self.channel_id = channel.id
+        leader_id = voice_leaders.get(channel.id)
+        members = [m for m in channel.guild.members
+                   if not m.bot and m.id != leader_id and not is_trusted(channel.id, m.id)]
+        self.total_pages = max(1, (len(members) + PER_PAGE - 1) // PER_PAGE)
+        self.page = max(0, min(page, self.total_pages - 1))
+        start = self.page * PER_PAGE
+        for i, m in enumerate(members[start:start + PER_PAGE]):
+            btn = discord.ui.Button(label=m.display_name[:18],
+                                    style=discord.ButtonStyle.secondary, row=i // 5)
+            btn.callback = self._make_add_cb(m.id)
+            self.add_item(btn)
+        prev = discord.ui.Button(label="◀", style=discord.ButtonStyle.primary, row=4,
+                                 disabled=(self.page == 0))
+        prev.callback = self._prev_cb()
+        self.add_item(prev)
+        nxt = discord.ui.Button(label="▶", style=discord.ButtonStyle.primary, row=4,
+                                disabled=(self.page >= self.total_pages - 1))
+        nxt.callback = self._next_cb()
+        self.add_item(nxt)
+        close = discord.ui.Button(label="Закрыть", emoji="✖️",
+                                  style=discord.ButtonStyle.danger, row=4)
+        close.callback = self._close_cb()
+        self.add_item(close)
+
+    def _make_add_cb(self, user_id):
+        async def cb(interaction):
+            await interaction.response.defer(ephemeral=True)
+            if voice_leaders.get(self.channel_id) != interaction.user.id:
+                await interaction.followup.send("🚫 Только лидер.", ephemeral=True)
+                return
+            trusted_users[self.channel_id].add(user_id)
+            channel = bot.get_channel(self.channel_id)
+            if channel:
+                m = channel.guild.get_member(user_id)
+                await interaction.followup.send(
+                    f"✅ {m.display_name if m else user_id} добавлен.", ephemeral=True)
+                await safe_edit_original(interaction,
+                                         embed=build_whitelist_add_embed(channel, 0),
+                                         view=WhitelistAddSelectView(channel, page=0))
+        return cb
+
+    def _prev_cb(self):
+        async def cb(interaction):
+            await interaction.response.defer()
+            channel = bot.get_channel(self.channel_id)
+            if not channel:
+                return
+            await safe_edit_original(interaction,
+                                     embed=build_whitelist_add_embed(channel, self.page - 1),
+                                     view=WhitelistAddSelectView(channel, page=self.page - 1))
+        return cb
+
+    def _next_cb(self):
+        async def cb(interaction):
+            await interaction.response.defer()
+            channel = bot.get_channel(self.channel_id)
+            if not channel:
+                return
+            await safe_edit_original(interaction,
+                                     embed=build_whitelist_add_embed(channel, self.page + 1),
+                                     view=WhitelistAddSelectView(channel, page=self.page + 1))
+        return cb
+
+    def _close_cb(self):
+        async def cb(interaction):
+            try:
+                await interaction.response.defer()
+                await interaction.delete_original_response()
+            except (discord.NotFound, discord.HTTPException):
+                pass
+        return cb
+
+
+class WhitelistRemoveSelectView(discord.ui.View):
+    def __init__(self, channel, page=0):
+        super().__init__(timeout=180)
+        self.channel_id = channel.id
+        trusted = list(trusted_users.get(channel.id, set()))
+        self.total_pages = max(1, (len(trusted) + PER_PAGE - 1) // PER_PAGE)
+        self.page = max(0, min(page, self.total_pages - 1))
+        start = self.page * PER_PAGE
+        for i, uid in enumerate(trusted[start:start + PER_PAGE]):
+            m = channel.guild.get_member(uid)
+            label = (m.display_name if m else f"id={uid}")[:18]
+            btn = discord.ui.Button(label=label, style=discord.ButtonStyle.secondary, row=i // 5)
+            btn.callback = self._make_rem_cb(uid)
+            self.add_item(btn)
+        prev = discord.ui.Button(label="◀", style=discord.ButtonStyle.primary, row=4,
+                                 disabled=(self.page == 0))
+        prev.callback = self._prev_cb()
+        self.add_item(prev)
+        nxt = discord.ui.Button(label="▶", style=discord.ButtonStyle.primary, row=4,
+                                disabled=(self.page >= self.total_pages - 1))
+        nxt.callback = self._next_cb()
+        self.add_item(nxt)
+        close = discord.ui.Button(label="Закрыть", emoji="✖️",
+                                  style=discord.ButtonStyle.danger, row=4)
+        close.callback = self._close_cb()
+        self.add_item(close)
+
+    def _make_rem_cb(self, user_id):
+        async def cb(interaction):
+            await interaction.response.defer(ephemeral=True)
+            if voice_leaders.get(self.channel_id) != interaction.user.id:
+                await interaction.followup.send("🚫 Только лидер.", ephemeral=True)
+                return
+            trusted_users[self.channel_id].discard(user_id)
+            channel = bot.get_channel(self.channel_id)
+            if channel:
+                m = channel.guild.get_member(user_id)
+                await interaction.followup.send(
+                    f"✅ {m.display_name if m else user_id} убран.", ephemeral=True)
+                await safe_edit_original(interaction,
+                                         embed=build_whitelist_remove_embed(channel, 0),
+                                         view=WhitelistRemoveSelectView(channel, page=0))
+        return cb
+
+    def _prev_cb(self):
+        async def cb(interaction):
+            await interaction.response.defer()
+            channel = bot.get_channel(self.channel_id)
+            if not channel:
+                return
+            await safe_edit_original(interaction,
+                                     embed=build_whitelist_remove_embed(channel, self.page - 1),
+                                     view=WhitelistRemoveSelectView(channel, page=self.page - 1))
+        return cb
+
+    def _next_cb(self):
+        async def cb(interaction):
+            await interaction.response.defer()
+            channel = bot.get_channel(self.channel_id)
+            if not channel:
+                return
+            await safe_edit_original(interaction,
+                                     embed=build_whitelist_remove_embed(channel, self.page + 1),
+                                     view=WhitelistRemoveSelectView(channel, page=self.page + 1))
+        return cb
+
+    def _close_cb(self):
+        async def cb(interaction):
+            try:
+                await interaction.response.defer()
+                await interaction.delete_original_response()
+            except (discord.NotFound, discord.HTTPException):
+                pass
+        return cb
+
+
+# ============================================================
+# ВЫБОР УЧАСТНИКА
+# ============================================================
+ACTION_META = {
+    "kick":     {"title": "🦶 Кикнуть — выбери участника", "color": discord.Color.red()},
+    "mute":     {"title": "🔇 Микро — выбери участника",   "color": discord.Color.orange()},
+    "deaf":     {"title": "🎧 Уши — выбери участника",     "color": discord.Color.blue()},
+    "transfer": {"title": "👑 Передать лидерство",         "color": discord.Color.gold()},
+}
+PER_PAGE = 20
+
+
+class MemberButton(discord.ui.Button):
+    def __init__(self, member, action, channel_id, row):
+        suffix = voice_flags(member)
+        super().__init__(label=f"{member.display_name[:18]}{suffix}",
+                         style=discord.ButtonStyle.secondary, row=row)
+        self.member_id = member.id
+        self.action = action
+        self.channel_id = channel_id
+
+    async def callback(self, interaction):
+        await interaction.response.defer(ephemeral=True)
+        if voice_leaders.get(self.channel_id) != interaction.user.id:
+            await interaction.followup.send("🚫 Только лидер.", ephemeral=True)
+            return
+        channel = bot.get_channel(self.channel_id)
+        if not channel:
+            await interaction.followup.send("Канал не найден.", ephemeral=True)
+            return
+        target = channel.guild.get_member(self.member_id)
+        if not target:
+            await interaction.followup.send("Участник не найден.", ephemeral=True)
+            return
+        if not target.voice or target.voice.channel != channel:
+            await interaction.followup.send(
+                f"🚫 {target.display_name} уже не в канале.", ephemeral=True)
+            return
+        leader = channel.guild.get_member(interaction.user.id)
+        leader_name = leader.display_name if leader else "владелец"
+        leader_id = voice_leaders.get(self.channel_id)
+
+        try:
+            if self.action == "kick":
+                await target.move_to(None)
+                stats_bump(channel.id, "kicks", 1)
+                msg = f"🦶 {target.display_name} выкинут."
+                await notify_dm(target, content=(
+                    f"🦶 **{leader_name}** кикнул вас из **{channel.name}**."))
+            elif self.action == "mute":
+                new_state = not target.voice.mute
+                await target.edit(mute=new_state)
+                stats_bump(channel.id, "mutes", 1)
+                set_mute_state(channel.id, target.id, mute=new_state, leader_id=leader_id)
+                msg = f"{'🔇' if new_state else '🔊'} {target.display_name}: микро {'выкл' if new_state else 'вкл'}."
+                await notify_dm(target, content=(
+                    f"{'🔇' if new_state else '🔊'} **{leader_name}** "
+                    f"{'замьютил' if new_state else 'размьютил'} вас в **{channel.name}**."))
+            elif self.action == "deaf":
+                new_state = not target.voice.deaf
+                await target.edit(deafen=new_state)
+                stats_bump(channel.id, "deafs", 1)
+                set_mute_state(channel.id, target.id, deaf=new_state, leader_id=leader_id)
+                msg = f"{'🎧' if new_state else '🔊'} {target.display_name}: уши {'выкл' if new_state else 'вкл'}."
+                await notify_dm(target, content=(
+                    f"{'🎧' if new_state else '🔊'} **{leader_name}** "
+                    f"{'заглушил' if new_state else 'разглушил'} вас в **{channel.name}**."))
+            elif self.action == "transfer":
+                q = voice_queues.get(self.channel_id, deque())
+                if target.id in q:
+                    q.remove(target.id)
+                q.appendleft(target.id)
+                voice_leaders[self.channel_id] = target.id
+                reset_stats(self.channel_id, target.id)
+                stats_track_join(self.channel_id, target.id)
+                mute_states.pop(self.channel_id, None)
+                await notify_dm(target, content=(
+                    f"👑 **{leader_name}** передал вам владение **{channel.name}**."))
+                if leader:
+                    await notify_dm(leader, content=(
+                        f"👑 Вы передали владение **{channel.name}** — **{target.display_name}**."))
+                await interaction.followup.send(
+                    f"👑 Лидерство передано: {target.display_name}.", ephemeral=True)
+                await refresh_lock_message(channel)
+                return
+            else:
+                msg = "Неизвестное действие."
+        except discord.Forbidden:
+            await interaction.followup.send(
+                "🚫 У бота нет прав или роль ниже.", ephemeral=True)
+            return
+        await interaction.followup.send(msg, ephemeral=True)
+        channel2 = bot.get_channel(self.channel_id)
+        if channel2:
+            await safe_edit_original(
+                interaction,
+                embed=build_member_select_embed(channel2, self.action),
+                view=MemberSelectView(channel2, action=self.action, page=0),
+            )
+
+
+class MemberSelectView(discord.ui.View):
+    def __init__(self, channel, action, page=0):
+        super().__init__(timeout=180)
+        self.channel_id = channel.id
+        self.action = action
+        leader_id = voice_leaders.get(channel.id)
+        members = [m for m in channel.members if not m.bot and m.id != leader_id]
+        self.total_pages = max(1, (len(members) + PER_PAGE - 1) // PER_PAGE)
+        self.page = max(0, min(page, self.total_pages - 1))
+        start = self.page * PER_PAGE
+        for i, m in enumerate(members[start:start + PER_PAGE]):
+            self.add_item(MemberButton(m, action, channel.id, row=i // 5))
+        prev = discord.ui.Button(label="◀", style=discord.ButtonStyle.primary, row=4,
+                                 disabled=(self.page == 0))
+        prev.callback = self._prev_cb()
+        self.add_item(prev)
+        if self.total_pages > 1:
+            self.add_item(discord.ui.Button(label=f"Стр. {self.page + 1}/{self.total_pages}",
+                                            style=discord.ButtonStyle.secondary, row=4, disabled=True))
+        nxt = discord.ui.Button(label="▶", style=discord.ButtonStyle.primary, row=4,
+                                disabled=(self.page >= self.total_pages - 1))
+        nxt.callback = self._next_cb()
+        self.add_item(nxt)
+        close = discord.ui.Button(label="Закрыть", emoji="✖️",
+                                  style=discord.ButtonStyle.danger, row=4)
+        close.callback = self._close_cb()
+        self.add_item(close)
+
+    def _prev_cb(self):
+        async def cb(interaction):
+            await interaction.response.defer()
+            channel = bot.get_channel(self.channel_id)
+            if not channel:
+                return
+            await safe_edit_original(
+                interaction,
+                embed=build_member_select_embed(channel, self.action),
+                view=MemberSelectView(channel, self.action, page=self.page - 1))
+        return cb
+
+    def _next_cb(self):
+        async def cb(interaction):
+            await interaction.response.defer()
+            channel = bot.get_channel(self.channel_id)
+            if not channel:
+                return
+            await safe_edit_original(
+                interaction,
+                embed=build_member_select_embed(channel, self.action),
+                view=MemberSelectView(channel, self.action, page=self.page + 1))
+        return cb
+
+    def _close_cb(self):
+        async def cb(interaction):
+            try:
+                await interaction.response.defer()
+                await interaction.delete_original_response()
+            except (discord.NotFound, discord.HTTPException):
+                pass
+        return cb
+
+
+def build_member_select_embed(channel, action):
+    meta = ACTION_META.get(action, {"title": "Выбор", "color": discord.Color.blurple()})
+    leader_id = voice_leaders.get(channel.id)
+    leader = channel.guild.get_member(leader_id) if leader_id else None
+    members = [m for m in channel.members if not m.bot and m.id != leader_id]
+    if members:
+        lines = [f"• {m.display_name}{voice_flags(m)}" for m in members[:30]]
+        desc = "\n".join(lines)
+        if len(members) > 30:
+            desc += f"\n… и ещё {len(members) - 30}"
+    else:
+        desc = "Список пуст 🤷"
+    embed = discord.Embed(title=meta["title"], description=desc, color=meta["color"])
+    embed.set_footer(text=f"Канал: {channel.name} • Лидер: "
+                          f"{leader.display_name if leader else '—'}")
+    return embed
+
+
+# ============================================================
+# БАНЫ
+# ============================================================
+class BanTypeView(discord.ui.View):
+    def __init__(self, channel):
+        super().__init__(timeout=180)
+        self.channel_id = channel.id
+
+    async def _check(self, interaction):
+        await interaction.response.defer(ephemeral=True)
+        if voice_leaders.get(self.channel_id) != interaction.user.id:
+            await interaction.followup.send("🚫 Только лидер.", ephemeral=True)
+            return None
+        channel = bot.get_channel(self.channel_id)
+        if not channel:
+            await interaction.followup.send("Канал не найден.", ephemeral=True)
+            return None
+        return channel
+
+    @discord.ui.button(label="⏳ Забанить на время",
+                       style=discord.ButtonStyle.primary, row=0)
+    async def temp_btn(self, interaction, button):
+        channel = await self._check(interaction)
+        if not channel:
+            return
+        view = BanMemberSelectView(channel, ban_kind="temp", page=0)
+        embed = build_ban_member_select_embed(channel, "temp", 0)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+    @discord.ui.button(label="🔒 Забанить навсегда",
+                       style=discord.ButtonStyle.danger, row=0)
+    async def perm_btn(self, interaction, button):
+        channel = await self._check(interaction)
+        if not channel:
+            return
+        view = BanMemberSelectView(channel, ban_kind="perm", page=0)
+        embed = build_ban_member_select_embed(channel, "perm", 0)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+
+def build_ban_member_select_embed(channel, ban_kind, page):
+    leader_id = voice_leaders.get(channel.id)
+    members = [m for m in channel.guild.members
+               if not m.bot and m.id != leader_id
+               and not is_banned(channel.id, m.id)
+               and not is_bot_owner(m)]
+    start = page * PER_PAGE
+    lines = [f"• {m.display_name}" for m in members[start:start + PER_PAGE]]
+    desc = "\n".join(lines) if lines else "Некого банить 🤷"
+    title = ("⏳ Временный бан — выбери участника" if ban_kind == "temp"
+             else "🔒 Постоянный бан — выбери участника")
+    return discord.Embed(title=title, description=desc, color=discord.Color.dark_red())
+
+
+class BanMemberSelectView(discord.ui.View):
+    def __init__(self, channel, ban_kind, page=0):
+        super().__init__(timeout=180)
+        self.channel_id = channel.id
+        self.ban_kind = ban_kind
+        leader_id = voice_leaders.get(channel.id)
+        members = [m for m in channel.guild.members
+                   if not m.bot and m.id != leader_id
+                   and not is_banned(channel.id, m.id)
+                   and not is_bot_owner(m)]
+        self.total_pages = max(1, (len(members) + PER_PAGE - 1) // PER_PAGE)
+        self.page = max(0, min(page, self.total_pages - 1))
+        start = self.page * PER_PAGE
+        for i, m in enumerate(members[start:start + PER_PAGE]):
+            btn = discord.ui.Button(label=m.display_name[:18],
+                                    style=discord.ButtonStyle.secondary, row=i // 5)
+            btn.callback = self._make_cb(m.id)
+            self.add_item(btn)
+        prev = discord.ui.Button(label="◀", style=discord.ButtonStyle.primary, row=4,
+                                 disabled=(self.page == 0))
+        prev.callback = self._prev_cb()
+        self.add_item(prev)
+        nxt = discord.ui.Button(label="▶", style=discord.ButtonStyle.primary, row=4,
+                                disabled=(self.page >= self.total_pages - 1))
+        nxt.callback = self._next_cb()
+        self.add_item(nxt)
+        close = discord.ui.Button(label="Закрыть", emoji="✖️",
+                                  style=discord.ButtonStyle.danger, row=4)
+        close.callback = self._close_cb()
+        self.add_item(close)
+
+    def _make_cb(self, user_id):
+        async def cb(interaction):
+            # ❗ НЕ вызываем defer — иначе send_modal не сработает
+            if voice_leaders.get(self.channel_id) != interaction.user.id:
+                await interaction.response.send_message(
+                    "🚫 Только лидер.", ephemeral=True)
+                return
+            channel = bot.get_channel(self.channel_id)
+            if not channel:
+                await interaction.response.send_message(
+                    "Канал не найден.", ephemeral=True)
+                return
+            if self.ban_kind == "perm":
+                await interaction.response.send_modal(
+                    PermBanModal(channel.id, user_id, interaction.user.id))
+            else:
+                await interaction.response.send_modal(
+                    TempBanReasonModal(channel.id, user_id, interaction.user.id,
+                                       seconds=3600, label="1 час"))
+        return cb
+
+    def _prev_cb(self):
+        async def cb(interaction):
+            await interaction.response.defer()
+            channel = bot.get_channel(self.channel_id)
+            if not channel:
+                return
+            await safe_edit_original(
+                interaction,
+                embed=build_ban_member_select_embed(channel, self.ban_kind, self.page - 1),
+                view=BanMemberSelectView(channel, self.ban_kind, page=self.page - 1))
+        return cb
+
+    def _next_cb(self):
+        async def cb(interaction):
+            await interaction.response.defer()
+            channel = bot.get_channel(self.channel_id)
+            if not channel:
+                return
+            await safe_edit_original(
+                interaction,
+                embed=build_ban_member_select_embed(channel, self.ban_kind, self.page + 1),
+                view=BanMemberSelectView(channel, self.ban_kind, page=self.page + 1))
+        return cb
+
+    def _close_cb(self):
+        async def cb(interaction):
+            try:
+                await interaction.response.defer()
+                await interaction.delete_original_response()
+            except (discord.NotFound, discord.HTTPException):
+                pass
+        return cb
+
+
+class TempBanReasonModal(discord.ui.Modal, title="⏳ Временный бан"):
+    reason_input = discord.ui.TextInput(
+        label="Причина блокировки",
+        placeholder="Кратко опиши причину",
+        required=True, max_length=200,
+    )
+
+    def __init__(self, channel_id, target_id, issued_by, seconds, label):
+        super().__init__()
+        self.channel_id = channel_id
+        self.target_id = target_id
+        self.issued_by = issued_by
+        self.seconds = seconds
+        self.label = label
+
+    async def on_submit(self, interaction):
+        await interaction.response.defer(ephemeral=True)
+        if voice_leaders.get(self.channel_id) != interaction.user.id:
+            await interaction.followup.send("🚫 Только лидер.", ephemeral=True)
+            return
+        channel = bot.get_channel(self.channel_id)
+        if not channel:
+            return
+        target = channel.guild.get_member(self.target_id)
+        if not target:
+            await interaction.followup.send("Участник не найден.", ephemeral=True)
+            return
+        if target.id == voice_leaders.get(self.channel_id):
+            await interaction.followup.send(
+                "🚫 Нельзя забанить текущего владельца.", ephemeral=True)
+            return
+        rec = add_ban(channel.id, channel.guild.id, target.id, "temp",
+                      self.reason_input.value, interaction.user.id, self.seconds)
+        if target.voice and target.voice.channel == channel:
+            try:
+                await target.move_to(None)
+            except discord.Forbidden:
+                pass
+        until = rec["expires_at"]
+        await notify_dm(target, content=(
+            f"⏳ **{interaction.user.display_name}** забанил вас в **{channel.name}** "
+            f"на **{self.label}**.\n📝 Причина: **{self.reason_input.value}**\n"
+            f"⏳ До: <t:{int(until)}:f>"))
+        await interaction.followup.send(
+            f"⏳ **{target.display_name}** забанен на **{self.label}**.\n"
+            f"📝 Причина: {self.reason_input.value}\n⏳ До: <t:{int(until)}:f>",
+            ephemeral=True)
+        await refresh_lock_message(channel)
+
+
+class PermBanModal(discord.ui.Modal, title="🔒 Постоянный бан"):
+    reason_input = discord.ui.TextInput(
+        label="Причина блокировки",
+        placeholder="Кратко опиши причину",
+        required=True, max_length=200,
+    )
+
+    def __init__(self, channel_id, target_id, issued_by):
+        super().__init__()
+        self.channel_id = channel_id
+        self.target_id = target_id
+        self.issued_by = issued_by
+
+    async def on_submit(self, interaction):
+        await interaction.response.defer(ephemeral=True)
+        if voice_leaders.get(self.channel_id) != interaction.user.id:
+            await interaction.followup.send("🚫 Только лидер.", ephemeral=True)
+            return
+        channel = bot.get_channel(self.channel_id)
+        if not channel:
+            return
+        target = channel.guild.get_member(self.target_id)
+        if not target:
+            await interaction.followup.send("Участник не найден.", ephemeral=True)
+            return
+        if target.id == voice_leaders.get(self.channel_id):
+            await interaction.followup.send(
+                "🚫 Нельзя забанить текущего владельца.", ephemeral=True)
+            return
+        add_ban(channel.id, channel.guild.id, target.id, "perm",
+                self.reason_input.value, interaction.user.id)
+        if target.voice and target.voice.channel == channel:
+            try:
+                await target.move_to(None)
+            except discord.Forbidden:
+                pass
+        await notify_dm(target, content=(
+            f"🚫 **{interaction.user.display_name}** забанил вас навсегда "
+            f"в **{channel.name}**.\n📝 Причина: **{self.reason_input.value}**"))
+        await interaction.followup.send(
+            f"🔒 **{target.display_name}** забанен навсегда.\n"
+            f"📝 Причина: {self.reason_input.value}",
+            ephemeral=True)
+        await refresh_lock_message(channel)
+
+
+class BanListView(discord.ui.View):
+    def __init__(self, channel, page=0):
+        super().__init__(timeout=180)
+        self.channel_id = channel.id
+        entries = list(banned_users.get(channel.id, {}).items())
+        self.total_pages = max(1, (len(entries) + 5 - 1) // 5)
+        self.page = max(0, min(page, self.total_pages - 1))
+        start = self.page * 5
+        for uid, rec in entries[start:start + 5]:
+            btn = discord.ui.Button(label="Разбанить", emoji="✅",
+                                    style=discord.ButtonStyle.success,
+                                    row=len(self.children))
+            btn.callback = self._make_unban_cb(uid)
+            self.add_item(btn)
+        if self.total_pages > 1:
+            prev = discord.ui.Button(label="◀", style=discord.ButtonStyle.primary, row=4,
+                                     disabled=(self.page == 0))
+            prev.callback = self._prev_cb()
+            self.add_item(prev)
+            nxt = discord.ui.Button(label="▶", style=discord.ButtonStyle.primary, row=4,
+                                    disabled=(self.page >= self.total_pages - 1))
+            nxt.callback = self._next_cb()
+            self.add_item(nxt)
+        close = discord.ui.Button(label="Закрыть", emoji="✖️",
+                                  style=discord.ButtonStyle.danger, row=4)
+        close.callback = self._close_cb()
+        self.add_item(close)
+
+    def _make_unban_cb(self, user_id):
+        async def cb(interaction):
+            await interaction.response.defer(ephemeral=True)
+            if voice_leaders.get(self.channel_id) != interaction.user.id:
+                await interaction.followup.send("🚫 Только лидер.", ephemeral=True)
+                return
+            ok = remove_ban(self.channel_id, user_id)
+            if ok:
+                await interaction.followup.send(f"✅ <@{user_id}> разбанен.", ephemeral=True)
+            else:
+                await interaction.followup.send("🚫 Запись не найдена.", ephemeral=True)
+            channel = bot.get_channel(self.channel_id)
+            if channel:
+                await safe_edit_original(interaction,
+                                         embed=build_banlist_embed(channel, 0),
+                                         view=BanListView(channel, 0))
+        return cb
+
+    def _prev_cb(self):
+        async def cb(interaction):
+            await interaction.response.defer()
+            channel = bot.get_channel(self.channel_id)
+            if not channel:
+                return
+            await safe_edit_original(interaction,
+                                     embed=build_banlist_embed(channel, self.page - 1),
+                                     view=BanListView(channel, self.page - 1))
+        return cb
+
+    def _next_cb(self):
+        async def cb(interaction):
+            await interaction.response.defer()
+            channel = bot.get_channel(self.channel_id)
+            if not channel:
+                return
+            await safe_edit_original(interaction,
+                                     embed=build_banlist_embed(channel, self.page + 1),
+                                     view=BanListView(channel, self.page + 1))
+        return cb
+
+    def _close_cb(self):
+        async def cb(interaction):
+            try:
+                await interaction.response.defer()
+                await interaction.delete_original_response()
+            except (discord.NotFound, discord.HTTPException):
+                pass
+        return cb
+
+
+def build_banlist_embed(channel, page):
+    entries = list(banned_users.get(channel.id, {}).items())
+    if not entries:
+        return discord.Embed(title="📋 Список банов", description="Пусто 🤷",
+                             color=discord.Color.greyple())
+    start = page * 5
+    lines = []
+    for uid, rec in entries[start:start + 5]:
+        m = channel.guild.get_member(uid)
+        name = m.display_name if m else f"id={uid}"
+        btype = "⏳ Временный" if rec.get("type") == "temp" else "🔒 Постоянный"
+        exp = rec.get("expires_at")
+        exp_str = f"<t:{int(exp)}:R>" if exp else "Навсегда"
+        issuer = channel.guild.get_member(rec.get("issued_by"))
+        lines.append(
+            f"**{name}** (`{uid}`)\n"
+            f"• Тип: {btype}\n"
+            f"• Причина: {rec.get('reason', '—')}\n"
+            f"• Выдал: {issuer.display_name if issuer else rec.get('issued_by')}\n"
+            f"• Осталось: {exp_str}"
+        )
+    return discord.Embed(
+        title="📋 Список банов",
+        description="\n\n".join(lines),
+        color=discord.Color.dark_red(),
+    ).set_footer(text=f"Стр. {page + 1}/{max(1, (len(entries) + 4) // 5)}")
+
+
+# ============================================================
+# ОЧИСТКА
+# ============================================================
+class ClearConfirmView(discord.ui.View):
+    def __init__(self, channel):
+        super().__init__(timeout=120)
+        self.channel_id = channel.id
+
+    async def _check(self, interaction):
+        await interaction.response.defer(ephemeral=True)
+        if voice_leaders.get(self.channel_id) != interaction.user.id:
+            await interaction.followup.send("🚫 Только лидер.", ephemeral=True)
+            return None
+        channel = bot.get_channel(self.channel_id)
+        if not channel:
+            await interaction.followup.send("Канал не найден.", ephemeral=True)
+            return None
+        return channel
+
+    @discord.ui.button(label="✅ Да, очистить", style=discord.ButtonStyle.danger, row=0)
+    async def confirm(self, interaction, button):
+        channel = await self._check(interaction)
+        if not channel:
+            return
+        await do_clear_channel(channel, interaction)
+        try:
+            await interaction.delete_original_response()
+        except (discord.NotFound, discord.HTTPException):
+            pass
+
+    @discord.ui.button(label="❌ Отмена", style=discord.ButtonStyle.secondary, row=0)
+    async def cancel(self, interaction, button):
+        try:
+            await interaction.response.defer()
+            await interaction.delete_original_response()
+        except (discord.NotFound, discord.HTTPException):
+            pass
+
+
+async def do_clear_channel(channel, interaction):
+    cid = channel.id
+    orig = original_limits.get(cid, 0)
+    custom_limits.pop(cid, None)
+    try:
+        await channel.edit(user_limit=orig, reason="Мазафака: очистка")
+    except (discord.Forbidden, discord.HTTPException):
+        pass
+    locked_channels.discard(cid)
+    whitelist_mode.discard(cid)
+    trusted_users.pop(cid, None)
+    banned_users.pop(cid, None)
+    mute_states.pop(cid, None)
+    leader_id = voice_leaders.get(cid)
+    if leader_id:
+        reset_stats(cid, leader_id)
+    await refresh_lock_message(channel)
+    await interaction.followup.send(
+        "🧹 Комната очищена. Все настройки владельца сброшены.", ephemeral=True)
+
+
+# ============================================================
+# !settings
+# ============================================================
+class SettingsView(discord.ui.View):
+    def __init__(self, user_id):
+        super().__init__(timeout=180)
+        self.user_id = user_id
+        self._rebuild()
+
+    def _rebuild(self):
+        self.clear_items()
+        dm_on = dm_enabled(self.user_id)
+        dm_btn = discord.ui.Button(
+            label=f"ЛС-уведомления: {'ВКЛ ✅' if dm_on else 'ВЫКЛ ❌'}",
+            style=discord.ButtonStyle.success if dm_on else discord.ButtonStyle.danger,
+            row=0,
+        )
+        dm_btn.callback = self._make_dm_callback()
+        self.add_item(dm_btn)
+        mode = get_panel_ping_mode(self.user_id)
+        ping_btn = discord.ui.Button(
+            label=f"Пинг панели: {PANEL_PING_LABELS[mode]}",
+            style=discord.ButtonStyle.primary, row=1,
+        )
+        ping_btn.callback = self._make_ping_callback()
+        self.add_item(ping_btn)
+
+    def _make_dm_callback(self):
+        async def cb(interaction):
+            if interaction.user.id != self.user_id:
+                await safe_respond(interaction, "🚫 Это не твоя панель.")
+                return
+            dm_notifications[self.user_id] = not dm_enabled(self.user_id)
+            save_settings()
+            self._rebuild()
+            await interaction.response.edit_message(
+                embed=build_settings_embed(self.user_id, interaction.user), view=self)
+        return cb
+
+    def _make_ping_callback(self):
+        async def cb(interaction):
+            if interaction.user.id != self.user_id:
+                await safe_respond(interaction, "🚫 Это не твоя панель.")
+                return
+            cur = get_panel_ping_mode(self.user_id)
+            idx = PANEL_PING_CYCLE.index(cur)
+            new_mode = PANEL_PING_CYCLE[(idx + 1) % len(PANEL_PING_CYCLE)]
+            set_panel_ping_mode(self.user_id, new_mode)
+            save_settings()
+            self._rebuild()
+            await interaction.response.edit_message(
+                embed=build_settings_embed(self.user_id, interaction.user), view=self)
+            cid = member_channel.get(self.user_id)
+            if cid:
+                ch = bot.get_channel(cid)
+                if ch and voice_leaders.get(cid) == self.user_id:
+                    await refresh_lock_message(ch)
+        return cb
+
+
+def build_settings_embed(user_id, user=None):
+    dm_on = dm_enabled(user_id)
+    mode = get_panel_ping_mode(user_id)
+    embed = discord.Embed(
+        title="⚙️ Мои настройки — Мазафака Войс",
+        description=(
+            f"Пользователь: **{user.display_name if user else '—'}**\n\n"
+            "**ЛС-уведомления** — бот пишет тебе в ЛС, когда владелец войса "
+            "применяет к тебе действия.\n"
+            "**Пинг панели** — как бот упоминает тебя в панели войса."
+        ),
+        color=discord.Color.green() if dm_on else discord.Color.red(),
+    )
+    embed.add_field(
+        name="Текущее состояние",
+        value=(
+            f"🔔 ЛС-уведомления: **{'ВКЛ ✅' if dm_on else 'ВЫКЛ ❌'}**\n"
+            f"📣 Пинг панели: **{PANEL_PING_LABELS[mode]}**"
+        ),
+        inline=False,
+    )
+    return embed
+
+
+@bot.command(name="settings", aliases=["настройки"])
+@commands.guild_only()
+async def settings_cmd(ctx):
+    embed = build_settings_embed(ctx.author.id, ctx.author)
+    view = SettingsView(ctx.author.id)
+    await safe_reply(ctx, embed=embed, view=view)
+
+
+@settings_cmd.error
+async def settings_cmd_error(ctx, error):
+    if isinstance(error, commands.NoPrivateMessage):
+        await safe_reply(ctx, "🚫 Команда только для серверов.")
+
+
+# ============================================================
+# АВТО-КИК
+# ============================================================
+async def enforce_limit_on_join(channel, member):
+    limit = get_limit(channel)
+    if not limit or limit <= 0:
+        return False
+    leader_id = voice_leaders.get(channel.id)
+    if member.id == leader_id:
+        return False
+    humans = [m for m in channel.members if not m.bot]
+    if len(humans) <= limit:
+        return False
+    try:
+        await member.move_to(None)
+    except discord.Forbidden:
+        return False
+    remove_member_from_queue(channel.id, member.id)
+    leader = channel.guild.get_member(leader_id) if leader_id else None
+    leader_name = leader.display_name if leader else "владелец"
+    await notify_dm(member, content=(
+        f"👥 В войсе **{channel.name}** лимит **{limit}**.\n"
+        f"Владелец **{leader_name}** — мест нет."))
+    return True
+
+
+# ============================================================
+# СБРОС
+# ============================================================
+async def reset_channel_state(channel):
+    cid = channel.id
+    orig = original_limits.get(cid, 0)
+    if custom_limits.get(cid) != orig or channel.user_limit != orig:
+        try:
+            await channel.edit(user_limit=orig, reason="Мазафака: сброс")
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+    custom_limits.pop(cid, None)
+    locked_channels.discard(cid)
+    whitelist_mode.discard(cid)
+    trusted_users.pop(cid, None)
+    banned_users.pop(cid, None)
+    mute_states.pop(cid, None)
+    clean_channel(cid)
+    channel_stats.pop(cid, None)
+    await refresh_lock_message(channel)
+
+
+# ============================================================
+# СОБЫТИЯ
+# ============================================================
 @bot.event
 async def on_ready():
-    print('=' * 50)
-    print(f'✅ Бот {bot.user} успешно запущен!')
-    print(f'📡 На серверах: {len(bot.guilds)}')
-    print('=' * 50)
-    print('🎵 Бот готов к работе!')
-    bot.add_view(HubView())
-    bot.add_view(PlayView())
-    bot.add_view(UpdateLogsView(current='v1.1'))
+    log.info(f"Бот запущен: {bot.user}")
+    for guild in bot.guilds:
+        for ch in guild.voice_channels:
+            if not everyone_can_connect(ch):
+                initially_locked.add(ch.id)
+            original_limits[ch.id] = ch.user_limit
+    if not rotate_status.is_running():
+        rotate_status.start()
+    if not auto_cleanup_bans.is_running():
+        auto_cleanup_bans.start()
+    await notify_all_voice_channels("🟢 **Бот запущен и готов к работе!**")
+
+
+@tasks.loop(minutes=1)
+async def auto_cleanup_bans():
+    cleanup_expired_bans()
+
+
+@auto_cleanup_bans.before_loop
+async def before_cleanup():
+    await bot.wait_until_ready()
+
+
+@bot.event
+async def on_disconnect():
+    global _shutdown_done
+    if _shutdown_done:
+        return
+    _shutdown_done = True
+    try:
+        save_settings()
+    except Exception:
+        pass
+    try:
+        await notify_all_voice_channels("🔴 **Бот выключается...**")
+    except Exception:
+        pass
+
 
 @bot.event
 async def on_voice_state_update(member, before, after):
-    if member == bot.user:
-        if before.channel and not after.channel:
-            print('🔌 Бот отключён от войса')
-            bot.currently_playing = False
-            bot.loop_running = False
-            bot.current_track = None
-            bot.current_url = None
-            bot.current_generation += 1
-            bot.voice_client = None
-            bot.event_chain_active = False
+    if not is_human(member):
+        return
+    old_ch, new_ch = before.channel, after.channel
+    if old_ch == new_ch:
+        if new_ch and voice_leaders.get(new_ch.id) == member.id:
+            await refresh_lock_message(new_ch)
+        return
+    if old_ch is not None:
+        before_members = list(old_ch.members)
+        await handle_leave(old_ch, member, before_members=before_members)
+    if new_ch is not None:
+        await handle_join(new_ch, member)
 
-async def connect_and_play_url(voice_channel, url, track_name, ctx=None):
-    if bot.is_connecting:
-        print('⏳ Уже идёт подключение, пропускаю запрос')
-        if ctx: await ctx.send('⏳ __**Подожди, бот уже подключается...**__')
+
+async def handle_join(channel, member):
+    cid = channel.id
+    if is_bot_owner(member):
+        try:
+            await channel.send(content="👑 **В войс зашел создатель бота**")
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
+    leader_id = voice_leaders.get(cid)
+    leader = channel.guild.get_member(leader_id) if leader_id else None
+    leader_name = leader.display_name if leader else "владелец"
+
+    # Проверка бана — САМАЯ ПЕРВАЯ
+    if is_banned(cid, member.id) and member.id != leader_id:
+        try:
+            await member.move_to(None)
+        except discord.Forbidden:
+            return
+        rec = banned_users.get(cid, {}).get(member.id, {})
+        exp = rec.get("expires_at")
+        exp_str = f"\n⏳ До: <t:{int(exp)}:f>" if exp else "\n🔒 Навсегда"
+        await notify_dm(member, content=(
+            f"🚫 **{leader_name}** запретил вам вход в **{channel.name}**.\n"
+            f"📝 Причина: **{rec.get('reason', '—')}**{exp_str}"))
         return
 
-    bot.is_connecting = True
+    if whitelist_enabled(cid) and member.id != leader_id and not is_bot_owner(member):
+        if not is_trusted(cid, member.id):
+            try:
+                await member.move_to(None)
+            except discord.Forbidden:
+                return
+            await notify_dm(member, content=(
+                f"🔒 **Режим «Только свои»** в **{channel.name}**.\n"
+                f"Владелец **{leader_name}** не добавил вас в доверенные."))
+            return
+
+    if is_locked(channel) and member.id != leader_id and not is_bot_owner(member):
+        try:
+            await member.move_to(None)
+        except discord.Forbidden:
+            return
+        await notify_dm(member, content=(
+            f"🔒 **Вам закрыт доступ к войсу**\n"
+            f"Сервер: **{channel.guild.name}**\n"
+            f"Канал: **{channel.name}**\n"
+            f"Владелец **{leader_name}** закрыл вход."))
+        return
+
+    if not is_bot_owner(member):
+        if await enforce_limit_on_join(channel, member):
+            await refresh_lock_message(channel)
+            return
+
+    q = voice_queues[cid]
+    if not q:
+        q.append(member.id)
+        voice_leaders[cid] = member.id
+        member_channel[member.id] = cid
+        ensure_stats(cid, member.id)
+        await refresh_lock_message(channel)
+        stats_track_join(cid, member.id)
+        return
+
+    if member.id in q:
+        member_channel[member.id] = cid
+        stats_track_join(cid, member.id)
+        await apply_saved_mute_state(channel, member)
+        return
+
+    q.append(member.id)
+    member_channel[member.id] = cid
+    if cid not in voice_leaders:
+        voice_leaders[cid] = q[0]
+        ensure_stats(cid, q[0])
+    await refresh_lock_message(channel)
+    stats_track_join(cid, member.id)
+    await apply_saved_mute_state(channel, member)
+
+
+async def handle_leave(channel, member, before_members=None):
+    cid = channel.id
+    member_channel.pop(member.id, None)
+    stats_track_leave(cid, member.id)
+
+    was_leader = (voice_leaders.get(cid) == member.id)
+    q = voice_queues.get(cid)
+    if q is not None:
+        remove_member_from_queue(cid, member.id)
+
+    if before_members is not None:
+        remaining = [m for m in before_members if m.id != member.id and not m.bot]
+    else:
+        remaining = [m for m in channel.members if m.id != member.id and not m.bot]
+
+    if not remaining:
+        await reset_channel_state(channel)
+        log.info(f"[{channel.guild.name} / 🔊 {channel.name}] пусто — сброс")
+        return
+
+    if was_leader:
+        new_leader = random.choice(remaining)
+        voice_leaders[cid] = new_leader.id
+        mute_states.pop(cid, None)
+        q = voice_queues.get(cid)
+        if q is not None:
+            if new_leader.id in q:
+                q.remove(new_leader.id)
+            q.appendleft(new_leader.id)
+        member_channel[new_leader.id] = cid
+        reset_stats(cid, new_leader.id)
+        stats_track_join(cid, new_leader.id)
+        await notify_dm(new_leader, content=(
+            f"👑 Вы стали новым владельцем **{channel.name}** "
+            f"на сервере **{channel.guild.name}**."))
+        await refresh_lock_message(channel)
+        return
+
+    if voice_leaders.get(cid):
+        await refresh_lock_message(channel)
+
+
+# ============================================================
+# АДМИН-КОМАНДЫ
+# ============================================================
+@bot.command(name="voices", aliases=["войсы"])
+@owner_only()
+async def voices_cmd(ctx):
+    if not voice_leaders:
+        await safe_reply(ctx, "Нет активных войсов.")
+        return
+    lines = []
+    for cid, leader_id in voice_leaders.items():
+        ch = ctx.guild.get_channel(cid)
+        leader = ctx.guild.get_member(leader_id)
+        if not ch:
+            continue
+        humans = len([m for m in ch.members if not m.bot])
+        lock = "🔒" if is_locked(ch) else "🔓"
+        lim = get_limit(ch)
+        lim_str = f" / лимит {lim}" if lim else ""
+        wl = " / whitelist" if whitelist_enabled(cid) else ""
+        lines.append(f"{lock} 🔊 **{ch.name}** — 👑 "
+                     f"{leader.display_name if leader else leader_id} ({humans} чел{lim_str}{wl})")
+    embed = discord.Embed(title="🎧 Активные войсы", description="\n".join(lines),
+                         color=discord.Color.blurple())
+    await safe_reply(ctx, embed=embed)
+
+
+@bot.command(name="setleader", aliases=["влад"])
+@owner_only()
+@commands.guild_only()
+async def setleader_cmd(ctx, member: discord.Member, channel: discord.VoiceChannel = None):
+    if channel is None:
+        if member.voice and member.voice.channel:
+            channel = member.voice.channel
+        else:
+            await safe_reply(ctx, "🚫 Укажи канал: `!setleader @user #войс`")
+            return
+    cid = channel.id
+    q = voice_queues[cid]
+    if member.id in q:
+        q.remove(member.id)
+    q.appendleft(member.id)
+    voice_leaders[cid] = member.id
+    mute_states.pop(cid, None)
+    reset_stats(cid, member.id)
+    stats_track_join(cid, member.id)
+    if member.voice and member.voice.channel != channel:
+        try:
+            await member.move_to(channel)
+        except discord.Forbidden:
+            pass
+    await safe_reply(ctx, f"👑 Владелец **{channel.name}** — **{member.display_name}**.")
+    await refresh_lock_message(channel)
+
+
+@bot.command(name="say", aliases=["сказать"])
+@owner_only()
+async def say_cmd(ctx, channel: discord.TextChannel, *, text: str):
     try:
-        voice_client = discord.utils.get(bot.voice_clients, guild=voice_channel.guild)
-
-        if (voice_client and voice_client.is_connected()
-                and voice_client.channel == voice_channel
-                and bot.currently_playing and bot.current_url == url):
-            print(f'🎵 Уже играет: {track_name}')
-            if ctx: await ctx.send(f'🎵 __**Уже играет:**__ **{track_name}**')
-            return
-
-        if voice_client and voice_client.is_playing():
-            print(f'🔄 Останавливаю текущий трек')
-            voice_client.stop()
-            bot.currently_playing = False
-            bot.loop_running = False
-            await asyncio.sleep(0.5)
-
-        bot.current_generation += 1
-        my_gen = bot.current_generation
-        bot.current_track = track_name
-        bot.current_url = url
-
-        if voice_client is None:
-            try:
-                print(f'🔊 Подключаюсь к {voice_channel.name}...')
-                voice_client = await asyncio.wait_for(
-                    voice_channel.connect(timeout=15.0, reconnect=False),
-                    timeout=20.0
-                )
-                print(f'🔊 Подключился к {voice_channel.name}')
-            except asyncio.TimeoutError:
-                print('❌ Таймаут подключения')
-                if ctx: await ctx.send('❌ __**Таймаут подключения к войсу. Проверь интернет.**__')
-                return
-            except Exception as e:
-                print(f'❌ Ошибка подключения: {e}')
-                if ctx: await ctx.send(f'❌ __**Ошибка подключения:**__ {e}')
-                return
-        elif voice_client.channel != voice_channel:
-            try:
-                print(f'🔊 Перемещаюсь в {voice_channel.name}...')
-                await asyncio.wait_for(voice_client.move_to(voice_channel), timeout=15.0)
-                print(f'🔊 Переместился в {voice_channel.name}')
-            except asyncio.TimeoutError:
-                print('❌ Таймаут перемещения')
-                if ctx: await ctx.send('❌ __**Таймаут перемещения.**__')
-                return
-            except Exception as e:
-                print(f'❌ Ошибка перемещения: {e}')
-                if ctx: await ctx.send(f'❌ __**Ошибка перемещения:**__ {e}')
-                return
-        else:
-            print(f'🔊 Уже в нужном канале: {voice_channel.name}')
-
-        await asyncio.sleep(0.5)
-
-        if voice_client is None or not voice_client.is_connected():
-            print('❌ Не удалось подключиться к войсу')
-            if ctx: await ctx.send('❌ __**Не удалось подключиться к войсу.**__')
-            return
-
-        bot.currently_playing = True
-        bot.voice_client = voice_client
-
-        if ctx: await ctx.send(f'🎵 __**Играет:**__ **{track_name}** в **{voice_channel.name}**')
-        asyncio.create_task(play_audio_by_url(voice_client, url, track_name, my_gen))
-
-    finally:
-        bot.is_connecting = False
-
-# ===== КОМАНДЫ =====
-
-@bot.command(name='play')
-async def play_command(ctx):
-    voice_channel = get_author_voice_channel(ctx)
-    if not voice_channel:
-        await ctx.send('❌ __**Ты не в голосовом канале! Зайди в войс и попробуй снова.**__')
-        return
-    if not await ensure_bot_free_or_same(ctx, voice_channel):
-        return
-    bot.event_chain_active = False
-    await send_hub(ctx)
-    await connect_and_play_url(voice_channel, DEFAULT_AUDIO_URL, 'Лашара', ctx)
-
-@bot.command(name='join')
-async def join_command(ctx):
-    voice_channel = get_author_voice_channel(ctx)
-    if not voice_channel:
-        await ctx.send('❌ __**Ты не в голосовом канале! Зайди в войс и попробуй снова.**__')
-        return
-    if not await ensure_bot_free_or_same(ctx, voice_channel):
-        return
-    voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    if voice_client is None:
+        await channel.send(text)
         try:
-            await asyncio.wait_for(voice_channel.connect(timeout=15.0, reconnect=False), timeout=20.0)
-            await ctx.send(f'🔊 __**Подключился к**__ **{voice_channel.name}**!')
-        except asyncio.TimeoutError:
-            await ctx.send('❌ __**Таймаут подключения. Проверь интернет.**__')
-        except Exception as e:
-            await ctx.send(f'❌ __**Ошибка подключения:**__ {e}')
-    elif voice_client.channel != voice_channel:
+            await ctx.message.delete()
+        except (discord.Forbidden, discord.NotFound):
+            pass
+        await safe_reply(ctx, f"✅ Отправлено в {channel.mention}.", delete_after=5)
+    except discord.Forbidden:
+        await safe_reply(ctx, "🚫 Нет прав.")
+
+
+@bot.command(name="embed")
+@owner_only()
+async def embed_cmd(ctx, channel: discord.TextChannel, title: str, *, description: str):
+    embed = discord.Embed(title=title, description=description, color=discord.Color.blurple())
+    try:
+        await channel.send(embed=embed)
         try:
-            await asyncio.wait_for(voice_client.move_to(voice_channel), timeout=15.0)
-            await ctx.send(f'🔊 __**Переместился в**__ **{voice_channel.name}**!')
-        except Exception as e:
-            await ctx.send(f'❌ __**Ошибка перемещения:**__ {e}')
-    else:
-        await ctx.send('✅ __**Бот уже в твоём канале!**__')
+            await ctx.message.delete()
+        except (discord.Forbidden, discord.NotFound):
+            pass
+        await safe_reply(ctx, f"✅ Embed в {channel.mention}.", delete_after=5)
+    except discord.Forbidden:
+        await safe_reply(ctx, "🚫 Нет прав.")
 
-@bot.command(name='stop')
-async def stop_command(ctx):
-    voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    if voice_client:
-        if voice_client.is_playing(): voice_client.stop()
-        bot.currently_playing = False
-        bot.loop_running = False
-        bot.current_track = None
-        bot.current_url = None
-        bot.current_generation += 1
-        bot.event_chain_active = False
-        await ctx.send('⏹️ __**Музыка остановлена!**__ (бот остаётся в канале)')
-    else:
-        await ctx.send('❌ __**Бот не в канале!**__')
 
-@bot.command(name='leave')
-async def leave_command(ctx):
-    voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    if voice_client:
-        if voice_client.is_playing(): voice_client.stop()
-        await voice_client.disconnect(force=True)
-        bot.currently_playing = False
-        bot.loop_running = False
-        bot.current_track = None
-        bot.current_url = None
-        bot.current_generation += 1
-        bot.voice_client = None
-        bot.event_chain_active = False
-        await ctx.send('👋 __**Бот отключился от голосового канала!**__')
-    else:
-        await ctx.send('❌ __**Бот не в канале!**__')
+@bot.command(name="dm", aliases=["лс"])
+@owner_only()
+async def dm_cmd(ctx, member: discord.Member, *, text: str):
+    try:
+        await member.send(text)
+        await safe_reply(ctx, f"✅ ЛС **{member.display_name}**.", delete_after=5)
+    except discord.Forbidden:
+        await safe_reply(ctx, "🚫 У пользователя закрыты ЛС.")
 
-@bot.command(name='hub')
-async def hub_command(ctx):
-    await send_hub(ctx)
 
-@bot.command(name='now')
-async def now_command(ctx):
-    if bot.currently_playing and bot.current_track:
-        await ctx.send(f'🎵 __**Сейчас играет:**__ **{bot.current_track}**')
-    else:
-        voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-        if voice_client and voice_client.is_connected():
-            await ctx.send('🔇 __**Бот в канале, но музыка не играет**__')
-        else:
-            await ctx.send('❌ __**Бот не в канале и музыка не играет!**__')
+@bot.command(name="del")
+@owner_only()
+async def del_cmd(ctx, message_id: int, channel: discord.TextChannel = None):
+    channel = channel or ctx.channel
+    try:
+        msg = await channel.fetch_message(message_id)
+        await msg.delete()
+        await safe_reply(ctx, "🗑 Удалено.", delete_after=5)
+    except discord.NotFound:
+        await safe_reply(ctx, "🚫 Не найдено.")
+    except discord.Forbidden:
+        await safe_reply(ctx, "🚫 Нет прав.")
 
-@bot.command(name='volume')
-async def volume_command(ctx, value: int = None):
-    if value is None:
-        await ctx.send(f'🔊 __**Текущая громкость:**__ **{bot.volume}%**')
+
+@bot.command(name="vkick", aliases=["вкик"])
+@owner_only()
+@commands.guild_only()
+async def vkick_cmd(ctx, member: discord.Member):
+    if not member.voice or not member.voice.channel:
+        await safe_reply(ctx, "🚫 Не в войсе.")
         return
-    if value < 1 or value > 100:
-        await ctx.send('❌ __**Громкость должна быть от 1 до 100!**__')
-        return
-    bot.volume = value
-    voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-    if voice_client and voice_client.is_playing():
-        if isinstance(voice_client.source, discord.PCMVolumeTransformer):
-            voice_client.source.volume = value / 100
-    await ctx.send(f'🔊 __**Громкость установлена на**__ **{value}%**')
+    try:
+        ch = member.voice.channel
+        await member.move_to(None)
+        await safe_reply(ctx, f"🦶 {member.display_name} выкинут из **{ch.name}**.")
+    except discord.Forbidden:
+        await safe_reply(ctx, "🚫 Нет прав.")
 
-@bot.command(name='list')
-async def list_tracks(ctx):
-    embed = build_music_list_embed(ctx.guild)
-    if os.path.exists(PLAY_IMAGE):
-        file = discord.File(PLAY_IMAGE, filename='play.png')
-        embed.set_image(url='attachment://play.png')
-        await ctx.send(embed=embed, file=file)
-    else:
-        await ctx.send(embed=embed)
 
-@bot.command(name='test')
-async def test_command(ctx):
-    await ctx.send('__**Я пащу**__ 💀')
-
-@bot.command(name='restart')
-async def restart_command(ctx):
-    if bot.current_url:
-        voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
-        if voice_client:
-            old_url = bot.current_url
-            old_track = bot.current_track
-            if voice_client.is_playing(): voice_client.stop()
-            bot.currently_playing = False
-            bot.current_generation += 1
-            await asyncio.sleep(0.5)
-            bot.current_generation += 1
-            my_gen = bot.current_generation
-            bot.current_track = old_track
-            bot.current_url = old_url
-            bot.currently_playing = True
-            asyncio.create_task(play_audio_by_url(voice_client, old_url, old_track, my_gen))
-            await ctx.send('🔄 __**Перезапустил воспроизведение**__')
+@bot.command(name="vreset", aliases=["сброс"])
+@owner_only()
+@commands.guild_only()
+async def vreset_cmd(ctx, channel: discord.VoiceChannel = None):
+    if channel is None:
+        if ctx.author.voice and ctx.author.voice.channel:
+            channel = ctx.author.voice.channel
         else:
-            await ctx.send('❌ __**Бот не в канале!**__')
-    else:
-        await ctx.send('❌ __**Нет активного трека!**__')
+            await safe_reply(ctx, "🚫 Укажи канал.")
+            return
+    await reset_channel_state(channel)
+    await safe_reply(ctx, f"♻️ Сброшен **{channel.name}**.")
 
-# === ОБРАБОТЧИК !event-gta6 music ===
+
+@bot.command(name="vbans", aliases=["баны"])
+@owner_only()
+@commands.guild_only()
+async def vbans_cmd(ctx, channel: discord.VoiceChannel):
+    entries = banned_users.get(channel.id, {})
+    if not entries:
+        await safe_reply(ctx, f"В **{channel.name}** нет банов.")
+        return
+    lines = []
+    for uid, rec in entries.items():
+        m = ctx.guild.get_member(uid)
+        btype = "⏳" if rec.get("type") == "temp" else "🔒"
+        exp = rec.get("expires_at")
+        exp_str = f"<t:{int(exp)}:R>" if exp else "навсегда"
+        lines.append(f"{btype} {m.mention if m else uid} — {rec.get('reason', '—')} ({exp_str})")
+    embed = discord.Embed(title=f"🚫 Баны — {channel.name}",
+                         description="\n".join(lines), color=discord.Color.dark_red())
+    await safe_reply(ctx, embed=embed)
+
+
+@bot.command(name="vclear", aliases=["клеарбаны"])
+@owner_only()
+@commands.guild_only()
+async def vclear_cmd(ctx, channel: discord.VoiceChannel):
+    banned_users.pop(channel.id, None)
+    await safe_reply(ctx, f"✅ Все баны **{channel.name}** сняты.")
+
+
+@bot.command(name="adminhelp", aliases=["апомощь"])
+@owner_only()
+async def adminhelp_cmd(ctx):
+    embed = discord.Embed(title="🛠 Админ-команды", color=discord.Color.dark_green())
+    embed.add_field(name="👑 Войсы", value=(
+        "`!voices` — список войсов\n"
+        "`!setleader @user [#ch]` — сменить владельца\n"
+        "`!vkick @user` — выкинуть из войса\n"
+        "`!vreset [#ch]` — сбросить войс\n"
+        "`!vbans #ch` — список банов\n"
+        "`!vclear #ch` — снять все баны"
+    ), inline=False)
+    embed.add_field(name="💬 Сообщения", value=(
+        "`!say #ch текст`\n`!embed #ch \"Заголовок\" текст`\n"
+        "`!dm @user текст`\n`!del ID [#ch]`"
+    ), inline=False)
+    await safe_reply(ctx, embed=embed)
+
+
 @bot.event
-async def on_message(message):
-    if not message.content: return
-    content = message.content.strip().lower()
-    parts = content.split()
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CheckFailure):
+        return
+    if isinstance(error, commands.MissingRequiredArgument):
+        await safe_reply(ctx, f"🚫 Не хватает аргумента: `{error.param.name}`")
+    elif isinstance(error, commands.BadArgument):
+        await safe_reply(ctx, f"🚫 Неверный аргумент: {error}")
+    elif isinstance(error, commands.CommandNotFound):
+        return
+    else:
+        log.warning(f"Ошибка команды: {error}")
 
-    if len(parts) >= 2 and parts[0] == '!event-gta6' and parts[1] == 'music':
-        sub = parts[2] if len(parts) >= 3 else None
 
-        if sub is None:
-            voice_channel = None
-            if hasattr(message.author, 'voice') and message.author.voice and message.author.voice.channel:
-                voice_channel = message.author.voice.channel
-
-            bot_channel = get_bot_voice_channel(message.guild)
-            if bot_channel and (voice_channel is None or not same_voice_channel(bot_channel, voice_channel)):
-                await message.channel.send(
-                    f'❌ __**Бот уже занят в другом голосовом канале:**__ **{bot_channel.name}**'
-                )
-                return
-
-            if not voice_channel:
-                await message.channel.send('❌ __**Ты не в голосовом канале! Зайди в войс и попробуй снова.**__')
-                return
-
-            bot.event_chain_active = True
-            bot.event_chain_index = 0
-            await connect_and_play_url(
-                voice_channel,
-                TRACKS['blood-in-your-eyes'],
-                'Blood In Your Eyes',
-                ctx=None
+# ============================================================
+# ЗАПУСК — БЕЗОПАСНАЯ ВЕРСИЯ
+# ============================================================
+async def _run_with_retry():
+    """
+    Безопасный запуск: при 429 (Cloudflare 1015) НЕ долбим Discord,
+    а ждём длинную паузу и пробуем ОДИН раз. При 401/403 — выходим.
+    """
+    try:
+        await bot.start(TOKEN)
+    except discord.LoginFailure:
+        log.error("❌ Неверный токен (401). Останавливаюсь, повторов не будет.")
+        return
+    except discord.PrivilegedIntentsRequired:
+        log.error(
+            "❌ Включи привилегированные интенты:\n"
+            "   PRESENCE INTENT\n   SERVER MEMBERS INTENT\n   MESSAGE CONTENT INTENT"
+        )
+        return
+    except discord.HTTPException as e:
+        if e.status == 429:
+            log.error(
+                "❌ 429 / Cloudflare 1015: IP временно заблокирован. "
+                "Жду 15 минут и пробую ОДИН раз. "
+                "Если снова 429 — остановлюсь, чтобы не продлевать блокировку."
             )
-            await message.channel.send(
-                f'🎵 __**Играет:**__ **Blood In Your Eyes** в **{voice_channel.name}**\n'
-                f'🎶 __**Плейлист GTA 6:**__ Blood In Your Eyes ➡️ Love Is A Long Road ➡️ Hot Together ➡️ RHYNO (по кругу)'
-            )
-            return
-
-        if sub == 'next':
-            vc = discord.utils.get(bot.voice_clients)
-            if not vc or not vc.is_connected():
-                await message.channel.send('❌ __**Бот сейчас не играет Плейлист GTA 6.**__')
+            await asyncio.sleep(900)
+            try:
+                await bot.start(TOKEN)
+            except Exception as e2:
+                log.error("❌ Повторный запуск не удался: %r. Останавливаюсь.", e2)
                 return
-            bot.event_chain_active = True
-            await _advance_event_chain(vc)
-            await message.channel.send(f'⏭️ __**Следующая песня Плейлиста GTA 6:**__ **{bot.current_track}**')
+        elif e.status == 503:
+            log.warning("⚠️ 503 от Discord. Жду 5 минут и пробую один раз…")
+            await asyncio.sleep(300)
+            try:
+                await bot.start(TOKEN)
+            except Exception as e2:
+                log.error("❌ Повторный запуск не удался: %r. Останавливаюсь.", e2)
+                return
+        elif e.status in (401, 403):
+            log.error("❌ %s: токен недействителен или нет прав. Останавливаюсь.", e.status)
             return
-
-        if sub == 'how':
-            if bot.current_track and bot.event_chain_active:
-                await message.channel.send(f'🎵 __**Сейчас из Плейлиста GTA 6 играет:**__ **{bot.current_track}**')
-            else:
-                await message.channel.send('❌ __**Плейлист GTA 6 сейчас не играет.**__')
+        else:
+            log.error("❌ HTTP %s: %r. Останавливаюсь.", e.status, e)
             return
-
-        if sub == 'stop':
-            vc = discord.utils.get(bot.voice_clients)
-            if vc and vc.is_playing():
-                vc.stop()
-            bot.currently_playing = False
-            bot.loop_running = False
-            bot.current_track = None
-            bot.current_url = None
-            bot.current_generation += 1
-            bot.event_chain_active = False
-            await message.channel.send('⏹️ __**Плейлист GTA 6 остановлен.**__')
-            return
-
-        await message.channel.send('❌ __**Неизвестная подкоманда. Используй:**__ `!event-gta6 music`, `!event-gta6 music next`, `!event-gta6 music how`, `!event-gta6 music stop`')
+    except Exception as e:
+        log.error("❌ Ошибка запуска: %r. Останавливаюсь.", e)
         return
 
-    await bot.process_commands(message)
 
-if __name__ == '__main__':
+def main():
+    if not TOKEN:
+        log.error("❌ Токен не задан! Установи переменную окружения DISCORD_TOKEN.")
+        return
+    if not OWNER_IDS:
+        log.warning("⚠️ OWNER_ID не задан — админ-команды недоступны никому.")
+    if not PANEL_IMAGE_URL:
+        log.warning("⚠️ PANEL_IMAGE_URL не задан — картинка панели не будет показана.")
+
+    load_settings()
+
+    keep_alive()
+
     try:
-        print('🚀 Запуск бота...')
-        if not TOKEN:
-            raise RuntimeError(
-                'Не задан DISCORD_TOKEN. Добавь токен бота в переменные окружения.'
-            )
-        bot.run(TOKEN)
-    except Exception as e:
-        print(f'❌ Ошибка: {e}')
-        input('Нажмите Enter для выхода...')
+        asyncio.run(_run_with_retry())
+    except KeyboardInterrupt:
+        log.info("Бот остановлен.")
+
+
+if __name__ == "__main__":
+    main()
