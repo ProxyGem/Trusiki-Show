@@ -25,7 +25,7 @@ TOKEN = os.environ.get("DISCORD_TOKEN")
 OWNER_ID = os.environ.get("OWNER_ID", "")
 PANEL_IMAGE_URL = os.environ.get(
     "PANEL_IMAGE_URL",
-    "https://raw.githubusercontent.com/ProxyGem/Trusiki-Show/main/panel_upravleniya_gta6.png",
+    "https://raw.githubusercontent.com/ProxyGem/Trusiki-Show/main/panel_upravleniya.png",
 )
 SETTINGS_FILE = "settings.json"
 
@@ -1219,19 +1219,37 @@ class GTA6EventPanel(discord.ui.View):
             )
             return
 
-        # Управляем только музыкальным ботом, который находится в том же войсе.
-        # Нельзя отправлять команды в чужой войс и переключать чужую музыку.
+        # Проверяем актуальные VoiceState сервера, а не только channel.members:
+        # список members может отставать от реального состояния голосового канала.
+        guild = owner_channel.guild
+        voice_bots = []
+
+        for user_id, voice_state in guild.voice_states.items():
+            if voice_state.channel is None:
+                continue
+
+            voice_member = voice_state.member or guild.get_member(user_id)
+            if voice_member is None or not voice_member.bot:
+                continue
+            if bot.user is not None and voice_member.id == bot.user.id:
+                continue
+
+            voice_bots.append((voice_member, voice_state.channel))
+
         bots_here = [
-            m for m in owner_channel.members
-            if m.bot and (bot.user is None or m.id != bot.user.id)
+            member for member, voice_channel in voice_bots
+            if voice_channel.id == owner_channel.id
         ]
+
         if not bots_here:
-            bots_elsewhere = [
-                vc for vc in owner_channel.guild.voice_channels
-                if any(m.bot and (bot.user is None or m.id != bot.user.id) for m in vc.members)
-            ]
-            if bots_elsewhere:
-                names = ", ".join(vc.name for vc in bots_elsewhere[:3])
+            other_channel_names = list(dict.fromkeys(
+                voice_channel.name
+                for _, voice_channel in voice_bots
+                if voice_channel.id != owner_channel.id
+            ))
+
+            if other_channel_names:
+                names = ", ".join(other_channel_names[:3])
                 message = (
                     "🚫 Музыкальный бот сейчас находится в другом войсе "
                     f"({names}). Переключение музыки заблокировано. "
@@ -1239,7 +1257,11 @@ class GTA6EventPanel(discord.ui.View):
                 )
             else:
                 message = "❌ В твоём войсе нет музыкального бота."
-            await interaction.response.send_message(message, ephemeral=True)
+
+            await interaction.response.send_message(
+                message,
+                ephemeral=True
+            )
             return
 
         bot_member = owner_channel.guild.me
