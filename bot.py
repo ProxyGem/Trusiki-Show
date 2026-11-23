@@ -23,7 +23,10 @@ load_dotenv()
 # ============================================================
 TOKEN = os.environ.get("DISCORD_TOKEN")
 OWNER_ID = os.environ.get("OWNER_ID", os.environ.get("OWNER_IDS", ""))
-PANEL_IMAGE_URL = os.environ.get("PANEL_IMAGE_URL", "").strip()
+PANEL_IMAGE_URL = (
+    os.environ.get("PANEL_IMAGE_URL", "").strip()
+    or "https://raw.githubusercontent.com/ProxyGem/Trusiki-Show/main/panel_upravleniya_gta6.png"
+)
 SETTINGS_FILE = "settings.json"
 
 OWNER_IDS: set[int] = set()
@@ -126,7 +129,23 @@ def load_settings():
     try:
         with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
+    except json.JSONDecodeError as e:
+        log.error(
+            "%s повреждён (%s). Создаю резервную копию и запускаю настройки по умолчанию.",
+            SETTINGS_FILE, e
+        )
+        backup = SETTINGS_FILE + ".broken"
+        try:
+            if os.path.exists(backup):
+                os.remove(backup)
+            os.replace(SETTINGS_FILE, backup)
+        except OSError as backup_error:
+            log.warning("Не удалось сохранить резервную копию %s: %s", backup, backup_error)
+        dm_notifications.clear()
+        panel_ping_mode.clear()
+        save_settings()
+        return
+    except OSError as e:
         log.warning(f"Не могу прочитать {SETTINGS_FILE}: {e}")
         return
     for uid_str, enabled in data.get("dm_notifications", {}).items():
@@ -1380,26 +1399,47 @@ async def refresh_lock_message(channel):
 # ============================================================
 # ГЛАВНАЯ ПАНЕЛЬ ЛИДЕРА
 # ============================================================
+async def panel_respond(interaction, **kwargs):
+    """Отвечает на нажатие панели одним запросом и не роняет View при 429."""
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(**kwargs)
+        else:
+            await interaction.response.send_message(**kwargs)
+        return True
+    except discord.HTTPException as exc:
+        status = getattr(exc, "status", None)
+        details = str(exc)
+        if status == 429 or "1015" in details or "rate limited" in details.lower():
+            log.error(
+                "Discord/Cloudflare ограничил запрос панели (HTTP %s). "
+                "Не повторяю запрос, чтобы не усилить блокировку.", status
+            )
+        else:
+            log.exception("Не удалось ответить на нажатие панели: %s", exc)
+        return False
+
+
 class LeaderPanel(discord.ui.View):
     def __init__(self, channel_id):
         super().__init__(timeout=None)
         self.channel_id = channel_id
 
     async def _require_leader(self, interaction):
-        await interaction.response.defer(ephemeral=True)
+        # Не делаем defer: ответим одним interaction callback в самом обработчике.
         channel = bot.get_channel(self.channel_id)
         if not channel:
-            await interaction.followup.send("Канал не найден.", ephemeral=True)
+            await panel_respond(interaction, "Канал не найден.", ephemeral=True)
             return None
         if not can_manage_channel(interaction.user, self.channel_id):
-            await interaction.followup.send(
+            await panel_respond(interaction, 
                 "🚫 Управлять может только владелец войса или владелец бота.", ephemeral=True)
             return None
         member = channel.guild.get_member(interaction.user.id)
         if not is_bot_owner(interaction.user) and (
             not member or not member.voice or member.voice.channel != channel
         ):
-            await interaction.followup.send(
+            await panel_respond(interaction, 
                 "🚫 Ты должен быть в своём голосовом канале.", ephemeral=True)
             return None
         return channel
@@ -1411,7 +1451,7 @@ class LeaderPanel(discord.ui.View):
             return
         view = MemberSelectView(channel, action="kick")
         embed = build_member_select_embed(channel, "kick")
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        await panel_respond(interaction, embed=embed, view=view, ephemeral=True)
 
     @discord.ui.button(label="Микро", emoji="🔇", style=discord.ButtonStyle.primary, row=0)
     async def mute_btn(self, interaction, button):
@@ -1420,7 +1460,7 @@ class LeaderPanel(discord.ui.View):
             return
         view = MemberSelectView(channel, action="mute")
         embed = build_member_select_embed(channel, "mute")
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        await panel_respond(interaction, embed=embed, view=view, ephemeral=True)
 
     @discord.ui.button(label="Уши", emoji="🎧", style=discord.ButtonStyle.primary, row=0)
     async def deaf_btn(self, interaction, button):
@@ -1429,7 +1469,7 @@ class LeaderPanel(discord.ui.View):
             return
         view = MemberSelectView(channel, action="deaf")
         embed = build_member_select_embed(channel, "deaf")
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        await panel_respond(interaction, embed=embed, view=view, ephemeral=True)
 
     @discord.ui.button(label="Закрыть вход", emoji="🔒", style=discord.ButtonStyle.danger, row=1)
     async def lock_btn(self, interaction, button):
@@ -1437,7 +1477,7 @@ class LeaderPanel(discord.ui.View):
         if not channel:
             return
         locked_channels.add(channel.id)
-        await interaction.followup.send("🔒 Вход закрыт для всех.", ephemeral=True)
+        await panel_respond(interaction, "🔒 Вход закрыт для всех.", ephemeral=True)
         await refresh_lock_message(channel)
 
     @discord.ui.button(label="Открыть вход", emoji="🔓", style=discord.ButtonStyle.success, row=1)
@@ -1446,7 +1486,7 @@ class LeaderPanel(discord.ui.View):
         if not channel:
             return
         locked_channels.discard(channel.id)
-        await interaction.followup.send("🔓 Вход открыт для всех.", ephemeral=True)
+        await panel_respond(interaction, "🔓 Вход открыт для всех.", ephemeral=True)
         await refresh_lock_message(channel)
 
     @discord.ui.button(label="Только свои", emoji="👥", style=discord.ButtonStyle.primary, row=1)
@@ -1456,7 +1496,7 @@ class LeaderPanel(discord.ui.View):
             return
         view = WhitelistPanel(channel)
         embed = build_whitelist_embed(channel)
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        await panel_respond(interaction, embed=embed, view=view, ephemeral=True)
 
     @discord.ui.button(label="Забанить", emoji="🚫", style=discord.ButtonStyle.danger, row=2)
     async def ban_btn(self, interaction, button):
@@ -1472,7 +1512,7 @@ class LeaderPanel(discord.ui.View):
             ),
             color=discord.Color.dark_red(),
         )
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        await panel_respond(interaction, embed=embed, view=view, ephemeral=True)
 
     @discord.ui.button(label="Разбанить", emoji="✅", style=discord.ButtonStyle.success, row=2)
     async def unban_btn(self, interaction, button):
@@ -1480,11 +1520,11 @@ class LeaderPanel(discord.ui.View):
         if not channel:
             return
         if not banned_users.get(channel.id):
-            await interaction.followup.send("Список банов пуст 🤷", ephemeral=True)
+            await panel_respond(interaction, "Список банов пуст 🤷", ephemeral=True)
             return
         view = BanListView(channel, page=0)
         embed = build_banlist_embed(channel, 0)
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        await panel_respond(interaction, embed=embed, view=view, ephemeral=True)
 
     @discord.ui.button(label="Список банов", emoji="📋", style=discord.ButtonStyle.secondary, row=2)
     async def banlist_btn(self, interaction, button):
@@ -1492,27 +1532,27 @@ class LeaderPanel(discord.ui.View):
         if not channel:
             return
         if not banned_users.get(channel.id):
-            await interaction.followup.send("Список банов пуст 🤷", ephemeral=True)
+            await panel_respond(interaction, "Список банов пуст 🤷", ephemeral=True)
             return
         view = BanListView(channel, page=0)
         embed = build_banlist_embed(channel, 0)
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        await panel_respond(interaction, embed=embed, view=view, ephemeral=True)
 
     @discord.ui.button(label="Лимит", emoji="🔢", style=discord.ButtonStyle.primary, row=3)
     async def limit_btn(self, interaction, button):
         channel = bot.get_channel(self.channel_id)
         if not channel:
-            await interaction.response.send_message("Канал не найден.", ephemeral=True)
+            await panel_respond(interaction, "Канал не найден.", ephemeral=True)
             return
         if not can_manage_channel(interaction.user, self.channel_id):
-            await interaction.response.send_message(
+            await panel_respond(interaction, 
                 "🚫 Управлять может только владелец войса или владелец бота.", ephemeral=True)
             return
         member = channel.guild.get_member(interaction.user.id)
         if not is_bot_owner(interaction.user) and (
             not member or not member.voice or member.voice.channel != channel
         ):
-            await interaction.response.send_message(
+            await panel_respond(interaction, 
                 "🚫 Ты должен быть в своём голосовом канале.", ephemeral=True)
             return
         await interaction.response.send_modal(LimitModal(channel.id))
@@ -1524,7 +1564,7 @@ class LeaderPanel(discord.ui.View):
             return
         ok = await apply_limit(channel, 0)
         text = "♻️ Лимит снят." if ok else "🚫 Не удалось."
-        await interaction.followup.send(text, ephemeral=True)
+        await panel_respond(interaction, text, ephemeral=True)
         await refresh_lock_message(channel)
 
     @discord.ui.button(label="Передать", emoji="👑", style=discord.ButtonStyle.primary, row=4)
@@ -1534,7 +1574,7 @@ class LeaderPanel(discord.ui.View):
             return
         view = MemberSelectView(channel, action="transfer")
         embed = build_member_select_embed(channel, "transfer")
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        await panel_respond(interaction, embed=embed, view=view, ephemeral=True)
 
     @discord.ui.button(label="Очередь", emoji="📊", style=discord.ButtonStyle.secondary, row=4)
     async def queue_btn(self, interaction, button):
@@ -1542,11 +1582,11 @@ class LeaderPanel(discord.ui.View):
         if not channel:
             return
         if not channel:
-            await interaction.followup.send("Канал не найден.", ephemeral=True)
+            await panel_respond(interaction, "Канал не найден.", ephemeral=True)
             return
         q = voice_queues.get(self.channel_id, deque())
         if not q:
-            await interaction.followup.send("Очередь пуста 🤷", ephemeral=True)
+            await panel_respond(interaction, "Очередь пуста 🤷", ephemeral=True)
             return
         leader_id = voice_leaders.get(self.channel_id)
         lines = []
@@ -1558,7 +1598,7 @@ class LeaderPanel(discord.ui.View):
         embed = discord.Embed(title=f"📊 Очередь — {channel.name}",
                               description="\n".join(lines),
                               color=discord.Color.blurple())
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await panel_respond(interaction, embed=embed, ephemeral=True)
 
     @discord.ui.button(label="Статистика", emoji="📈", style=discord.ButtonStyle.success, row=4)
     async def stats_btn(self, interaction, button):
@@ -1571,7 +1611,7 @@ class LeaderPanel(discord.ui.View):
             buf = render_stats_png(channel.name, leader.display_name if leader else "—", st)
         except Exception as e:
             log.warning(f"Ошибка рендера статистики: {e}")
-            await interaction.followup.send(
+            await panel_respond(interaction, 
                 "🚫 Не могу сгенерировать картинку (проверь Pillow/шрифты).",
                 ephemeral=True)
             return
@@ -1580,7 +1620,7 @@ class LeaderPanel(discord.ui.View):
                               description=f"Канал: **{channel.name}**",
                               color=discord.Color.gold())
         embed.set_image(url="attachment://stats.png")
-        await interaction.followup.send(embed=embed, file=file, ephemeral=True)
+        await panel_respond(interaction, embed=embed, file=file, ephemeral=True)
 
     @discord.ui.button(label="Очистить", emoji="🧹", style=discord.ButtonStyle.danger, row=4)
     async def clear_btn(self, interaction, button):
@@ -1594,7 +1634,7 @@ class LeaderPanel(discord.ui.View):
             color=discord.Color.orange(),
         )
         view = ClearConfirmView(channel)
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        await panel_respond(interaction, embed=embed, view=view, ephemeral=True)
 
 
 def build_panel_embed(channel, leader):
@@ -2745,7 +2785,7 @@ async def on_ready():
     except (discord.HTTPException, discord.Forbidden) as exc:
         log.warning("Не удалось получить владельца Discord-приложения: %s", exc)
     if PANEL_IMAGE_URL:
-        log.info("PANEL_IMAGE_URL задан: %s", PANEL_IMAGE_URL)
+        log.info("PANEL_IMAGE_URL настроен; изображение будет добавлено в панели и GTA 6 EVENT.")
     else:
         log.warning("PANEL_IMAGE_URL пустой — картинка в embed не появится, добавь URL в .env")
     for guild in bot.guilds:
