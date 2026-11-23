@@ -23,9 +23,9 @@ load_dotenv()
 # ============================================================
 TOKEN = os.environ.get("DISCORD_TOKEN")
 OWNER_ID = os.environ.get("OWNER_ID", "")
-PANEL_IMAGE_URL = os.environ.get(
-    "PANEL_IMAGE_URL",
-    "https://raw.githubusercontent.com/ProxyGem/Trusiki-Show/main/panel_upravleniya_gta6.png",
+PANEL_IMAGE_URL = (
+    os.environ.get("PANEL_IMAGE_URL", "").strip()
+    or "https://raw.githubusercontent.com/ProxyGem/Trusiki-Show/main/panel_upravleniya_gta6.png"
 )
 SETTINGS_FILE = "settings.json"
 
@@ -159,6 +159,21 @@ def save_settings():
 # ============================================================
 def is_bot_owner(user):
     return user.id in OWNER_IDS
+
+
+def can_manage_channel(user, channel_id):
+    """Лидер войса и владелец бота могут управлять панелью этого войса."""
+    return (
+        voice_leaders.get(channel_id) == user.id
+        or is_bot_owner(user)
+    )
+
+
+def set_panel_image(embed):
+    """Единообразно добавляет изображение в приватные панели."""
+    if PANEL_IMAGE_URL:
+        embed.set_image(url=PANEL_IMAGE_URL)
+    return embed
 
 
 def owner_only():
@@ -1046,9 +1061,9 @@ class OpenPanelButton(discord.ui.View):
         # Отвечаем одним interaction callback, не создавая отдельный webhook
         # followup после defer. Это убирает лишний запрос к /webhooks/...,
         # на котором в логах возникал Cloudflare 429 / error 1015.
-        if voice_leaders.get(self.channel_id) != interaction.user.id:
+        if not can_manage_channel(interaction.user, self.channel_id):
             await interaction.response.send_message(
-                "🚫 Только владелец войса может открыть панель.",
+                "🚫 Открыть панель может только владелец войса или владелец бота.",
                 ephemeral=True
             )
             return
@@ -1069,8 +1084,6 @@ class OpenPanelButton(discord.ui.View):
             return
 
         embed = build_panel_embed(channel, member)
-        if PANEL_IMAGE_URL:
-            embed.set_image(url=PANEL_IMAGE_URL)
 
         view = LeaderPanel(channel.id)
 
@@ -1099,9 +1112,9 @@ class OpenPanelButton(discord.ui.View):
         style=discord.ButtonStyle.primary, row=1
     )
     async def gta6_event_btn(self, interaction, button):
-        if voice_leaders.get(self.channel_id) != interaction.user.id:
+        if not can_manage_channel(interaction.user, self.channel_id):
             await interaction.response.send_message(
-                "🚫 Только владелец войса может открыть GTA 6 EVENT.",
+                "🚫 Открыть GTA 6 EVENT может только владелец войса или владелец бота.",
                 ephemeral=True
             )
             return
@@ -1124,8 +1137,7 @@ class OpenPanelButton(discord.ui.View):
             ),
             color=discord.Color.from_rgb(218, 74, 190)
         )
-        if PANEL_IMAGE_URL:
-            embed.set_image(url=PANEL_IMAGE_URL)
+        set_panel_image(embed)
 
         view = GTA6EventPanel(self.channel_id)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
@@ -1169,7 +1181,7 @@ class GTA6TargetChannelSelect(discord.ui.Select):
         )
 
     async def callback(self, interaction):
-        if voice_leaders.get(self.owner_channel_id) != interaction.user.id:
+        if not can_manage_channel(interaction.user, self.owner_channel_id):
             await interaction.response.send_message(
                 "🚫 Только владелец твоего войса может менять канал управления.",
                 ephemeral=True
@@ -1204,7 +1216,7 @@ class GTA6EventPanel(discord.ui.View):
             )
             return
 
-        if voice_leaders.get(self.owner_channel_id) != interaction.user.id:
+        if not can_manage_channel(interaction.user, self.owner_channel_id):
             await interaction.response.send_message(
                 "🚫 Только владелец твоего войса может использовать GTA 6 EVENT.",
                 ephemeral=True
@@ -1311,8 +1323,7 @@ def build_open_embed(channel, leader):
         ),
         color=discord.Color.red() if locked else discord.Color.gold(),
     )
-    if PANEL_IMAGE_URL:
-        embed.set_image(url=PANEL_IMAGE_URL)
+    set_panel_image(embed)
     embed.set_footer(text="Мазафака Войс")
     return embed
 
@@ -1364,9 +1375,9 @@ class LeaderPanel(discord.ui.View):
         if not channel:
             await interaction.followup.send("Канал не найден.", ephemeral=True)
             return None
-        if voice_leaders.get(self.channel_id) != interaction.user.id:
+        if not can_manage_channel(interaction.user, self.channel_id):
             await interaction.followup.send(
-                "🚫 Только **лидер канала** может управлять.", ephemeral=True)
+                "🚫 Управлять может только владелец войса или владелец бота.", ephemeral=True)
             return None
         member = channel.guild.get_member(interaction.user.id)
         if not member or not member.voice or member.voice.channel != channel:
@@ -1475,9 +1486,9 @@ class LeaderPanel(discord.ui.View):
         if not channel:
             await interaction.response.send_message("Канал не найден.", ephemeral=True)
             return
-        if voice_leaders.get(self.channel_id) != interaction.user.id:
+        if not can_manage_channel(interaction.user, self.channel_id):
             await interaction.response.send_message(
-                "🚫 Только **лидер канала** может управлять.", ephemeral=True)
+                "🚫 Управлять может только владелец войса или владелец бота.", ephemeral=True)
             return
         member = channel.guild.get_member(interaction.user.id)
         if not member or not member.voice or member.voice.channel != channel:
@@ -1507,8 +1518,9 @@ class LeaderPanel(discord.ui.View):
 
     @discord.ui.button(label="Очередь", emoji="📊", style=discord.ButtonStyle.secondary, row=4)
     async def queue_btn(self, interaction, button):
-        await interaction.response.defer(ephemeral=True)
-        channel = bot.get_channel(self.channel_id)
+        channel = await self._require_leader(interaction)
+        if not channel:
+            return
         if not channel:
             await interaction.followup.send("Канал не найден.", ephemeral=True)
             return
@@ -1599,6 +1611,7 @@ def build_panel_embed(channel, leader):
         inline=False,
     )
     embed.set_footer(text="Мазафака Войс • панель видна только тебе")
+    set_panel_image(embed)
     return embed
 
 
@@ -1618,8 +1631,8 @@ class LimitModal(discord.ui.Modal, title="Лимит участников"):
 
     async def on_submit(self, interaction):
         await interaction.response.defer(ephemeral=True)
-        if voice_leaders.get(self.channel_id) != interaction.user.id:
-            await interaction.followup.send("🚫 Только лидер канала.", ephemeral=True)
+        if not can_manage_channel(interaction.user, self.channel_id):
+            await interaction.followup.send("🚫 Управлять может только владелец войса или владелец бота.", ephemeral=True)
             return
         raw = self.limit_input.value.strip()
         if not raw.isdigit():
@@ -1704,8 +1717,8 @@ class WhitelistPanel(discord.ui.View):
 
     async def _check(self, interaction):
         await interaction.response.defer(ephemeral=True)
-        if voice_leaders.get(self.channel_id) != interaction.user.id:
-            await interaction.followup.send("🚫 Только лидер.", ephemeral=True)
+        if not can_manage_channel(interaction.user, self.channel_id):
+            await interaction.followup.send("🚫 Управлять может только владелец войса или владелец бота.", ephemeral=True)
             return None
         channel = bot.get_channel(self.channel_id)
         if not channel:
@@ -1840,8 +1853,8 @@ class WhitelistAddSelectView(discord.ui.View):
     def _make_add_cb(self, user_id):
         async def cb(interaction):
             await interaction.response.defer(ephemeral=True)
-            if voice_leaders.get(self.channel_id) != interaction.user.id:
-                await interaction.followup.send("🚫 Только лидер.", ephemeral=True)
+            if not can_manage_channel(interaction.user, self.channel_id):
+                await interaction.followup.send("🚫 Управлять может только владелец войса или владелец бота.", ephemeral=True)
                 return
             trusted_users[self.channel_id].add(user_id)
             channel = bot.get_channel(self.channel_id)
@@ -1916,8 +1929,8 @@ class WhitelistRemoveSelectView(discord.ui.View):
     def _make_rem_cb(self, user_id):
         async def cb(interaction):
             await interaction.response.defer(ephemeral=True)
-            if voice_leaders.get(self.channel_id) != interaction.user.id:
-                await interaction.followup.send("🚫 Только лидер.", ephemeral=True)
+            if not can_manage_channel(interaction.user, self.channel_id):
+                await interaction.followup.send("🚫 Управлять может только владелец войса или владелец бота.", ephemeral=True)
                 return
             trusted_users[self.channel_id].discard(user_id)
             channel = bot.get_channel(self.channel_id)
@@ -1985,8 +1998,8 @@ class MemberButton(discord.ui.Button):
 
     async def callback(self, interaction):
         await interaction.response.defer(ephemeral=True)
-        if voice_leaders.get(self.channel_id) != interaction.user.id:
-            await interaction.followup.send("🚫 Только лидер.", ephemeral=True)
+        if not can_manage_channel(interaction.user, self.channel_id):
+            await interaction.followup.send("🚫 Управлять может только владелец войса или владелец бота.", ephemeral=True)
             return
         channel = bot.get_channel(self.channel_id)
         if not channel:
@@ -2153,8 +2166,8 @@ class BanTypeView(discord.ui.View):
 
     async def _check(self, interaction):
         await interaction.response.defer(ephemeral=True)
-        if voice_leaders.get(self.channel_id) != interaction.user.id:
-            await interaction.followup.send("🚫 Только лидер.", ephemeral=True)
+        if not can_manage_channel(interaction.user, self.channel_id):
+            await interaction.followup.send("🚫 Управлять может только владелец войса или владелец бота.", ephemeral=True)
             return None
         channel = bot.get_channel(self.channel_id)
         if not channel:
@@ -2231,9 +2244,9 @@ class BanMemberSelectView(discord.ui.View):
     def _make_cb(self, user_id):
         async def cb(interaction):
             # ❗ НЕ вызываем defer — иначе send_modal не сработает
-            if voice_leaders.get(self.channel_id) != interaction.user.id:
+            if not can_manage_channel(interaction.user, self.channel_id):
                 await interaction.response.send_message(
-                    "🚫 Только лидер.", ephemeral=True)
+                    "🚫 Управлять может только владелец войса или владелец бота.", ephemeral=True)
                 return
             channel = bot.get_channel(self.channel_id)
             if not channel:
@@ -2300,8 +2313,8 @@ class TempBanReasonModal(discord.ui.Modal, title="⏳ Временный бан"
 
     async def on_submit(self, interaction):
         await interaction.response.defer(ephemeral=True)
-        if voice_leaders.get(self.channel_id) != interaction.user.id:
-            await interaction.followup.send("🚫 Только лидер.", ephemeral=True)
+        if not can_manage_channel(interaction.user, self.channel_id):
+            await interaction.followup.send("🚫 Управлять может только владелец войса или владелец бота.", ephemeral=True)
             return
         channel = bot.get_channel(self.channel_id)
         if not channel:
@@ -2348,8 +2361,8 @@ class PermBanModal(discord.ui.Modal, title="🔒 Постоянный бан"):
 
     async def on_submit(self, interaction):
         await interaction.response.defer(ephemeral=True)
-        if voice_leaders.get(self.channel_id) != interaction.user.id:
-            await interaction.followup.send("🚫 Только лидер.", ephemeral=True)
+        if not can_manage_channel(interaction.user, self.channel_id):
+            await interaction.followup.send("🚫 Управлять может только владелец войса или владелец бота.", ephemeral=True)
             return
         channel = bot.get_channel(self.channel_id)
         if not channel:
@@ -2410,8 +2423,8 @@ class BanListView(discord.ui.View):
     def _make_unban_cb(self, user_id):
         async def cb(interaction):
             await interaction.response.defer(ephemeral=True)
-            if voice_leaders.get(self.channel_id) != interaction.user.id:
-                await interaction.followup.send("🚫 Только лидер.", ephemeral=True)
+            if not can_manage_channel(interaction.user, self.channel_id):
+                await interaction.followup.send("🚫 Управлять может только владелец войса или владелец бота.", ephemeral=True)
                 return
             ok = remove_ban(self.channel_id, user_id)
             if ok:
@@ -2495,8 +2508,8 @@ class ClearConfirmView(discord.ui.View):
 
     async def _check(self, interaction):
         await interaction.response.defer(ephemeral=True)
-        if voice_leaders.get(self.channel_id) != interaction.user.id:
-            await interaction.followup.send("🚫 Только лидер.", ephemeral=True)
+        if not can_manage_channel(interaction.user, self.channel_id):
+            await interaction.followup.send("🚫 Управлять может только владелец войса или владелец бота.", ephemeral=True)
             return None
         channel = bot.get_channel(self.channel_id)
         if not channel:
