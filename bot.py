@@ -22,11 +22,8 @@ load_dotenv()
 # НАСТРОЙКИ — БЕРУТСЯ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ
 # ============================================================
 TOKEN = os.environ.get("DISCORD_TOKEN")
-OWNER_ID = os.environ.get("OWNER_ID", "")
-PANEL_IMAGE_URL = (
-    os.environ.get("PANEL_IMAGE_URL", "").strip()
-    or "https://raw.githubusercontent.com/ProxyGem/Trusiki-Show/main/panel_upravleniya_gta6.png"
-)
+OWNER_ID = os.environ.get("OWNER_ID", os.environ.get("OWNER_IDS", ""))
+PANEL_IMAGE_URL = os.environ.get("PANEL_IMAGE_URL", "").strip()
 SETTINGS_FILE = "settings.json"
 
 OWNER_IDS: set[int] = set()
@@ -158,21 +155,31 @@ def save_settings():
 # ПРОВЕРКА ВЛАДЕЛЬЦА
 # ============================================================
 def is_bot_owner(user):
-    return user.id in OWNER_IDS
+    """Проверяет владельца по OWNER_ID/OWNER_IDS и владельцу Discord-приложения."""
+    return bool(user and user.id in OWNER_IDS)
 
 
 def can_manage_channel(user, channel_id):
     """Лидер войса и владелец бота могут управлять панелью этого войса."""
-    return (
-        voice_leaders.get(channel_id) == user.id
-        or is_bot_owner(user)
+    return bool(
+        user
+        and (voice_leaders.get(channel_id) == user.id or is_bot_owner(user))
     )
 
 
+_panel_image_warning_logged = False
+
 def set_panel_image(embed):
-    """Единообразно добавляет изображение в приватные панели."""
+    """Добавляет PANEL_IMAGE_URL в embed. URL должен вести прямо на PNG/JPG/WEBP."""
+    global _panel_image_warning_logged
     if PANEL_IMAGE_URL:
         embed.set_image(url=PANEL_IMAGE_URL)
+    elif not _panel_image_warning_logged:
+        log.warning(
+            "PANEL_IMAGE_URL не задан: Discord не сможет показать изображение. "
+            "Добавь в .env строку PANEL_IMAGE_URL=https://.../image.png"
+        )
+        _panel_image_warning_logged = True
     return embed
 
 
@@ -1076,14 +1083,18 @@ class OpenPanelButton(discord.ui.View):
             return
 
         member = channel.guild.get_member(interaction.user.id)
-        if member is None or member.voice is None or member.voice.channel != channel:
+        if not is_bot_owner(interaction.user) and (
+            member is None or member.voice is None or member.voice.channel != channel
+        ):
             await interaction.response.send_message(
-                "🚫 Ты должен быть в своём голосовом канале.",
+                "🚫 Ты должен находиться в своём голосовом канале.",
                 ephemeral=True
             )
             return
 
-        embed = build_panel_embed(channel, member)
+        # Владелец бота может открыть панель удалённо, даже если не состоит в войсе.
+        panel_leader = member or interaction.user
+        embed = build_panel_embed(channel, panel_leader)
 
         view = LeaderPanel(channel.id)
 
@@ -1121,7 +1132,9 @@ class OpenPanelButton(discord.ui.View):
 
         channel = bot.get_channel(self.channel_id)
         member = channel.guild.get_member(interaction.user.id) if channel else None
-        if channel is None or member is None or member.voice is None or member.voice.channel != channel:
+        if channel is None or (not is_bot_owner(interaction.user) and (
+            member is None or member.voice is None or member.voice.channel != channel
+        )):
             await interaction.response.send_message(
                 "🚫 Ты должен находиться в своём голосовом канале.",
                 ephemeral=True
@@ -1224,7 +1237,10 @@ class GTA6EventPanel(discord.ui.View):
             return
 
         member = owner_channel.guild.get_member(interaction.user.id)
-        if member is None or member.voice is None or member.voice.channel.id != self.owner_channel_id:
+        if not is_bot_owner(interaction.user) and (
+            member is None or member.voice is None
+            or member.voice.channel.id != self.owner_channel_id
+        ):
             await interaction.response.send_message(
                 "🚫 Ты должен оставаться в своём голосовом канале.",
                 ephemeral=True
@@ -1380,7 +1396,9 @@ class LeaderPanel(discord.ui.View):
                 "🚫 Управлять может только владелец войса или владелец бота.", ephemeral=True)
             return None
         member = channel.guild.get_member(interaction.user.id)
-        if not member or not member.voice or member.voice.channel != channel:
+        if not is_bot_owner(interaction.user) and (
+            not member or not member.voice or member.voice.channel != channel
+        ):
             await interaction.followup.send(
                 "🚫 Ты должен быть в своём голосовом канале.", ephemeral=True)
             return None
@@ -1491,7 +1509,9 @@ class LeaderPanel(discord.ui.View):
                 "🚫 Управлять может только владелец войса или владелец бота.", ephemeral=True)
             return
         member = channel.guild.get_member(interaction.user.id)
-        if not member or not member.voice or member.voice.channel != channel:
+        if not is_bot_owner(interaction.user) and (
+            not member or not member.voice or member.voice.channel != channel
+        ):
             await interaction.response.send_message(
                 "🚫 Ты должен быть в своём голосовом канале.", ephemeral=True)
             return
@@ -2710,6 +2730,24 @@ async def reset_channel_state(channel):
 @bot.event
 async def on_ready():
     log.info(f"Бот запущен: {bot.user}")
+    # Берём владельца непосредственно из Discord Application Info.
+    # OWNER_ID/OWNER_IDS остаются дополнительным ручным способом настройки.
+    try:
+        app_info = await bot.application_info()
+        if app_info.owner is not None:
+            OWNER_IDS.add(app_info.owner.id)
+            log.info("Владелец Discord-приложения загружен: %s", app_info.owner.id)
+        elif app_info.team is not None:
+            team_owner_id = getattr(app_info.team, "owner_id", None)
+            if team_owner_id:
+                OWNER_IDS.add(int(team_owner_id))
+                log.info("Владелец команды Discord загружен: %s", team_owner_id)
+    except (discord.HTTPException, discord.Forbidden) as exc:
+        log.warning("Не удалось получить владельца Discord-приложения: %s", exc)
+    if PANEL_IMAGE_URL:
+        log.info("PANEL_IMAGE_URL задан: %s", PANEL_IMAGE_URL)
+    else:
+        log.warning("PANEL_IMAGE_URL пустой — картинка в embed не появится, добавь URL в .env")
     for guild in bot.guilds:
         for ch in guild.voice_channels:
             if not everyone_can_connect(ch):
@@ -3141,9 +3179,6 @@ def main():
         return
     if not OWNER_IDS:
         log.warning("⚠️ OWNER_ID не задан — админ-команды недоступны никому.")
-    if not PANEL_IMAGE_URL:
-        log.warning("⚠️ PANEL_IMAGE_URL не задан — картинка панели не будет показана.")
-
     load_settings()
 
     keep_alive()
